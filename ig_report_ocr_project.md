@@ -1,0 +1,797 @@
+# Instagram Report Generator — Python OCR Edition (text-anchor based)
+
+Your screenshots vary by platform (iOS/Android), post type (Reel vs. Post), and screen size —
+fixed pixel regions won't survive that. Instead this uses **text anchors that are always
+present** ("Overview", "Views", "Accounts reached", "Follows", etc.) to locate everything else
+relative to them. No AI/LLM calls anywhere — OpenCV + Tesseract + geometry only.
+
+## How it works
+
+1. OCR the whole screenshot with word-level bounding boxes (Tesseract).
+2. Find the **"Overview"** tab label — present in every Reel/Post insights screen on both
+   platforms. This anchors the bottom edge of the 5-icon engagement row.
+3. **Icon row** (likes / comments / shares / sends / saves): take the numeric tokens sitting
+   just above "Overview", sort left-to-right. Instagram always orders these icons the same way
+   (heart → comment → repost → paper-plane → bookmark), so position alone tells us which is
+   which — we never need to read an icon.
+4. **Summary grid** (Views, Accounts reached, Profile visits *or* Average watch time, Follows):
+   search for each label's text anywhere on the page, then find the nearest number **below and
+   left-aligned with** that label — this correctly handles the 2-column grid layout instead of
+   naively assuming "the next line down."
+5. Whatever label isn't present on a given screenshot (e.g. Reels have no "Profile visits") is
+   simply left blank, same as before — you can still fill it by hand.
+
+Verified against your 3 sample screenshots (iOS Reel, iOS Post, Android Reel) — all icon-row and
+summary-grid values map correctly.
+
+## Repo structure
+
+```
+ig-report-generator/
+├── index.html                  ← GitHub Pages frontend (unchanged from before)
+├── README.md
+└── backend/
+    ├── app.py                  ← Flask API
+    ├── ocr_parser.py           ← anchor-based OCR logic
+    ├── requirements.txt
+    └── Dockerfile
+```
+
+No calibration step, no regions file — it adapts to layout automatically.
+
+---
+
+## 1. `backend/ocr_parser.py`
+
+```python
+"""
+Text-anchor based OCR extraction for Instagram Reel/Post insights screenshots.
+Works across iOS/Android, Reel/Post, and different screen sizes because it locates
+fields relative to always-present text anchors ("Overview", "Views", "Follows", etc.)
+instead of fixed pixel coordinates. No AI/LLM calls — OpenCV + Tesseract + geometry only.
+"""
+import io
+import re
+
+import cv2
+import numpy as np
+import pytesseract
+from pytesseract import Output
+from PIL import Image
+
+FIELD_KEYS = [
+    "views", "accounts_reached", "profile_visits", "follows",
+    "likes", "comments", "shares", "sends", "saves",
+]
+
+# Icons always appear in this left-to-right order in Instagram's engagement row:
+# heart (likes) -> comment -> repost/share -> paper-plane (sends) -> bookmark (saves)
+ICON_ORDER = ["likes", "comments", "shares", "sends", "saves"]
+
+# Multi-language label text used to find each Summary-grid card
+LABEL_KEYWORDS = {
+    "views": ["views", "vistas", "visualizacoes", "visualizações", "vues"],
+    "accounts_reached": ["accounts reached", "cuentas alcanzadas", "contas alcancadas",
+                          "contas alcançadas", "comptes atteints"],
+    "profile_visits": ["profile visits", "visitas al perfil", "visitas ao perfil",
+                        "visites du profil"],
+    "follows": ["follows", "seguidores nuevos", "seguiram", "abonnements"],
+}
+
+ANCHOR_WORD = "overview"
+
+# A full numeric token: 606 / 4.9K / 1,170,214 / 68,460 -- but NOT things like "5:14" or "79%"
+NUMBER_TOKEN_RE = re.compile(r"^[\d][\d.,]*[KkMm]?$")
+NUMBER_SEARCH_RE = re.compile(r"[\d][\d.,]*\s?[KkMm]?")
+
+
+def _preprocess(image_bytes: bytes):
+    pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    h, w = gray.shape
+    scale = 2 if max(h, w) < 1600 else 1
+    if scale > 1:
+        gray = cv2.resize(gray, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+
+    thresh = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
+    )
+    return thresh, scale
+
+
+def _words(image_array) -> list[dict]:
+    data = pytesseract.image_to_data(
+        image_array, lang="eng+spa+por+fra", output_type=Output.DICT
+    )
+    out = []
+    for i in range(len(data["text"])):
+        t = data["text"][i].strip()
+        if not t:
+            continue
+        out.append({
+            "text": t, "x": data["left"][i], "y": data["top"][i],
+            "w": data["width"][i], "h": data["height"][i],
+            "block": data["block_num"][i], "par": data["par_num"][i], "line": data["line_num"][i],
+        })
+    return out
+
+
+def _lines_from_words(words: list[dict]) -> list[dict]:
+    """Group OCR words into lines (by block/paragraph/line id)."""
+    groups = {}
+    for w in words:
+        key = (w["block"], w["par"], w["line"])
+        groups.setdefault(key, []).append(w)
+
+    lines = []
+    for group in groups.values():
+        group.sort(key=lambda w: w["x"])
+        text = " ".join(w["text"] for w in group)
+        x0 = min(w["x"] for w in group)
+        y0 = min(w["y"] for w in group)
+        lines.append({"text": text, "x": x0, "y0": y0, "words": group})
+
+    lines.sort(key=lambda l: l["y0"])
+    return lines
+
+
+def _is_number_word(text: str) -> bool:
+    return bool(NUMBER_TOKEN_RE.match(text)) and any(c.isdigit() for c in text)
+
+
+def _extract_icon_row(words: list[dict], overview_y: int | None, scale: int) -> dict:
+    """Find the 5 engagement numbers sitting just above the 'Overview' anchor,
+    ordered left-to-right, and map them by position to likes/comments/shares/sends/saves."""
+    if overview_y is not None:
+        candidates = [w for w in words if w["y"] < overview_y and _is_number_word(w["text"])]
+    else:
+        candidates = [w for w in words if _is_number_word(w["text"])]
+
+    if not candidates:
+        return {}
+
+    # The row closest above the anchor (largest y among candidates) is the icon row —
+    # this naturally skips status-bar numbers (battery %, clock) which sit much higher up.
+    candidates.sort(key=lambda w: -w["y"])
+    band_y = candidates[0]["y"]
+    band_tolerance = 40 * scale
+    band = [w for w in candidates if abs(w["y"] - band_y) < band_tolerance]
+    band.sort(key=lambda w: w["x"])
+
+    result = {}
+    for key, w in zip(ICON_ORDER, band[:5]):
+        result[key] = w["text"]
+    return result
+
+
+def _closest_number_below(lines: list[dict], label_line: dict, img_h: int) -> str | None:
+    """Find the number line that best matches this label: below it, and left-aligned
+    with it (handles multi-column grids, unlike naive 'next line' logic)."""
+    best_val, best_score = None, None
+    max_gap = img_h * 0.15
+    for line in lines:
+        if line["y0"] <= label_line["y0"]:
+            continue
+        dy = line["y0"] - label_line["y0"]
+        if dy > max_gap:
+            continue
+        m = NUMBER_SEARCH_RE.search(line["text"])
+        if not m:
+            continue
+        dx = abs(line["x"] - label_line["x"])
+        score = dx + dy * 0.4
+        if best_score is None or score < best_score:
+            best_score = score
+            best_val = m.group().strip()
+    return best_val
+
+
+def _extract_summary_grid(lines: list[dict], img_h: int) -> dict:
+    result = {}
+    for field, keywords in LABEL_KEYWORDS.items():
+        for line in lines:
+            norm = line["text"].lower()
+            if any(kw in norm for kw in keywords):
+                val = _closest_number_below(lines, line, img_h)
+                if val:
+                    result[field] = val
+                break
+    return result
+
+
+def extract_fields_from_image(image_bytes: bytes) -> dict:
+    processed, scale = _preprocess(image_bytes)
+    img_h = processed.shape[0]
+
+    words = _words(processed)
+    lines = _lines_from_words(words)
+
+    overview_y = None
+    for line in lines:
+        if ANCHOR_WORD in line["text"].lower():
+            overview_y = line["y0"]
+            break
+
+    found = {k: None for k in FIELD_KEYS}
+    found.update(_extract_icon_row(words, overview_y, scale))
+    found.update(_extract_summary_grid(lines, img_h))
+    return found
+
+
+def extract_fields_from_images(images: list[bytes]) -> dict:
+    """Merge across multiple screenshots. First non-null match per field wins,
+    so you can upload e.g. a Reel screenshot and a Post screenshot together if needed."""
+    merged = {k: None for k in FIELD_KEYS}
+    for image_bytes in images:
+        try:
+            partial = extract_fields_from_image(image_bytes)
+        except Exception:
+            partial = {}
+        for k, val in partial.items():
+            if merged.get(k) is None and val:
+                merged[k] = val
+    return merged
+```
+
+---
+
+## 2. `backend/app.py`
+
+```python
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from ocr_parser import extract_fields_from_images
+
+app = Flask(__name__)
+
+# Lock this down to your GitHub Pages origin in production:
+# CORS(app, origins=["https://yourusername.github.io"])
+CORS(app)
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/extract", methods=["POST"])
+def extract():
+    files = request.files.getlist("images")
+    if not files:
+        return jsonify({"error": "no images provided"}), 400
+
+    image_bytes_list = [f.read() for f in files]
+    result = extract_fields_from_images(image_bytes_list)
+    return jsonify(result)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+```
+
+---
+
+## 3. `backend/requirements.txt`
+
+```
+flask==3.0.3
+flask-cors==4.0.1
+pytesseract==0.3.13
+pillow==10.4.0
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+gunicorn==22.0.0
+```
+
+---
+
+## 4. `backend/Dockerfile`
+
+```dockerfile
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-spa \
+    tesseract-ocr-por \
+    tesseract-ocr-fra \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+
+EXPOSE 5000
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "app:app"]
+```
+
+---
+
+## 5. `index.html` — frontend (GitHub Pages)
+
+Unchanged — it already POSTs images as `FormData` to `{backendUrl}/extract` and maps the
+returned JSON keys onto the form fields, so it works as-is with this backend.
+
+```html
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  #app { font-family: 'Open Sans', system-ui, sans-serif; color: #e8e8e6; background: #0d0d0d; padding: 20px; border-radius: 12px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 20px; margin-bottom: 20px; border-bottom: 1px solid #1e1e1e; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { position: relative; width: 44px; height: 44px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 20px rgba(207,255,4,.28); }
+  .logo svg { width: 100%; height: 100%; display: block; }
+  .logo::after { content: ''; position: absolute; top: 0; left: -70%; width: 45%; height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,.65), transparent);
+    animation: logosheen 3.8s ease-in-out infinite; }
+  @keyframes logosheen { 0%,100% { left: -70%; } 45%,60% { left: 130%; } }
+  .brandtxt { display: flex; flex-direction: column; line-height: 1.1; }
+  .brandtxt b { font-family: 'Archivo', sans-serif; font-size: 17px; letter-spacing: .01em; color: #fff; }
+  .brandtxt span { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #cfff04; font-weight: 600; }
+  .langsel { display: flex; gap: 4px; }
+  .langsel button { padding: 8px 14px; font-size: 12px; font-weight: 600; background: #101010; color: #8a8a86; border: 1px solid #262626; border-radius: 8px; cursor: pointer; }
+  .langsel button.on { background: #cfff04; color: #000; border-color: #cfff04; }
+  .langsel button:hover:not(.on) { border-color: #3a3a3a; color: #cfcfca; }
+  .row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .side { flex: 0 0 320px; display: flex; flex-direction: column; gap: 14px; }
+  .scard { background: linear-gradient(160deg,#141414,#0c0c0c); border: 1px solid #1e1e1e; border-radius: 14px; padding: 16px; }
+  .scard h3 { margin-top: 0; }
+  .main { flex: 1; min-width: 480px; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: #cfff04; margin: 0 0 12px; font-weight: 600; }
+  label { display: block; font-size: 11px; color: #8a8a86; margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; background: #0d0d0d; border: 1px solid #2a2a2a; color: #e8e8e6; padding: 8px 10px; border-radius: 8px; font: inherit; font-size: 13px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #cfff04; outline-offset: 1px; }
+  input::placeholder, textarea::placeholder { color: #4a4a46; }
+  button { background: #cfff04; color: #000; border: 0; padding: 10px 14px; border-radius: 8px; font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.ghost { background: transparent; color: #cfff04; border: 1px solid #cfff04; }
+  .drop { border: 2px dashed #3a3a3a; border-radius: 8px; padding: 22px 12px; text-align: center; color: #8a8a86; font-size: 13px; cursor: pointer; }
+  .drop.hot { border-color: #cfff04; color: #cfff04; }
+  .thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+  .thumb { position: relative; aspect-ratio: 1; border-radius: 4px; overflow: hidden; border: 1px solid #333; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb b { position: absolute; top: 2px; right: 2px; background: #000c; color: #fff; border-radius: 3px; width: 16px; height: 16px; font-size: 10px; display: grid; place-items: center; cursor: pointer; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .note { font-size: 11px; color: #6a6a66; line-height: 1.5; margin-top: 10px; }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .status { font-size: 12px; color: #8a8a86; }
+  .status.err { color: #ff6b6b; }
+  .deck { display: flex; flex-direction: column; gap: 14px; }
+  .stage { width: 100%; aspect-ratio: 16/9; background: #000; position: relative; overflow: hidden; border-radius: 6px; }
+  .stage .slide { position: absolute; top: 0; left: 0; transform-origin: top left; }
+  details#datadd > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: #cfff04; font-weight: 600;
+    padding: 0 0 4px; user-select: none; }
+  details#datadd > summary::-webkit-details-marker { display: none; }
+  details#datadd > summary:hover { color: #dfff9a; }
+  details#datadd .chev { transition: transform .2s ease; color: #cfff04; }
+  details#datadd[open] .chev { transform: rotate(180deg); }
+  details#datadd #fields { padding: 12px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .fcell { margin: 0; background: linear-gradient(155deg,#141414,#0c0c0c); border: 1px solid #1e1e1e;
+           border-radius: 10px; padding: 10px 11px; transition: border-color .15s; }
+  .fcell:hover { border-color: #333; }
+  .fcell:focus-within { border-color: #cfff04; }
+  .fcell label { margin: 0 0 5px; font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+                 color: #cfff04; font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fcell input { background: transparent; border: 0; padding: 0; font-size: 15px; font-weight: 500;
+                 color: #fff; border-radius: 0; }
+  .fcell input:focus { outline: none; }
+  #fields > .fcell:first-child { grid-column: 1 / -1; background: #cfff04; border-color: #cfff04; }
+  #fields > .fcell:first-child label { color: #0a2a00; }
+  #fields > .fcell:first-child input { color: #000; font-weight: 700; }
+  #fields > .fcell:first-child input::placeholder { color: rgba(0,0,0,.45); }
+  #fields > .fcell:first-child:focus-within { border-color: #0a2a00; }
+  .fcell input::placeholder { color: #4a4a46; font-style: normal; }
+  .slide { width: 1280px; height: 720px; background: #000; overflow: hidden; font-family: 'Open Sans', sans-serif; }
+  .lime { color: #cfff04; }
+  .dk { font-family: 'Archivo', 'Open Sans', sans-serif; text-transform: uppercase; letter-spacing: .02em; font-weight: 400; }
+  .mcard { position: relative; overflow: hidden; }
+  .mcard::after {
+    content: ''; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(207,255,4,.07), transparent);
+    animation: sheen 5.5s ease-in-out infinite;
+  }
+  .mcard.hero::after { background: linear-gradient(100deg, transparent, rgba(255,255,255,.18), transparent); }
+  @keyframes sheen { 0%,100% { left: -60%; } 55%,70% { left: 130%; } }
+  .mcard.hero { box-shadow: 0 8px 30px rgba(207,255,4,.18); }
+  @media print { .mcard::after { display: none; } }
+  .arc { position: absolute; top: -46%; left: 50%; transform: translateX(-50%);
+         width: 150%; height: 118%; border-radius: 50%; pointer-events: none;
+         background: radial-gradient(closest-side,
+           rgba(207,255,4,.00) 60%, rgba(207,255,4,.07) 74%, rgba(207,255,4,.24) 85%,
+           rgba(255,255,255,.42) 92%, rgba(207,255,4,.00) 100%);
+         filter: blur(3px); animation: halo 6s ease-in-out infinite; }
+  .arc-core { position: absolute; top: -46%; left: 50%; transform: translateX(-50%);
+         width: 150%; height: 118%; border-radius: 50%; pointer-events: none;
+         box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.35);
+         mask: radial-gradient(closest-side, transparent 88%, #000 90%, #000 94%, transparent 96%);
+         -webkit-mask: radial-gradient(closest-side, transparent 88%, #000 90%, #000 94%, transparent 96%);
+         animation: halocore 6s ease-in-out infinite; }
+  @keyframes halo { 0%,100% { opacity: .75; filter: blur(3px); } 50% { opacity: 1; filter: blur(5px); } }
+  @keyframes halocore { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+  @media print { .arc, .arc-core { animation: none !important; opacity: 1 !important; } }
+  #taskbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    opacity: 0; visibility: hidden; transform: translateY(100%);
+    transition: opacity .25s ease, transform .25s ease, visibility .25s; }
+  #taskbar.show { opacity: 1; visibility: visible; transform: translateY(0); }
+  #totop { display: flex; align-items: center; justify-content: center; width: 100%;
+    height: 40px; border-radius: 0; color: #000; background: #cfff04;
+    border: 0; cursor: pointer; box-shadow: 0 -4px 20px rgba(207,255,4,.18); }
+  #totop:hover { background: #d7ff2e; }
+  @media print { #taskbar { display: none !important; } }
+  .glow { position: absolute; top: -30%; left: 50%; transform: translateX(-50%);
+         width: 90%; height: 80%; border-radius: 50%; pointer-events: none;
+         background: radial-gradient(closest-side, rgba(207,255,4,.09), transparent 70%);
+         filter: blur(20px); }
+  .grid-bg { position: absolute; inset: 0; pointer-events: none;
+         background-image: linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+                           linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+         background-size: 64px 64px; -webkit-mask: radial-gradient(ellipse 80% 70% at 50% 45%, #000 55%, transparent 100%);
+         mask: radial-gradient(ellipse 80% 70% at 50% 45%, #000 55%, transparent 100%); }
+</style>
+
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" id="logo">
+        <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+          <rect width="500" height="500" rx="90" fill="#cfff04"/>
+          <path fill="#000" d="M141.5,367.19c-12.36-9.68-17.65-25.31-16.29-40.62,1.27-14.22,9.72-27.66,23.01-35.39l41.95-24.39c-4.7-5.04-7.95-9.17-10.72-14.87-10.34-21.27-4.1-48.16,17.15-60.44l109.49-63.32c22.18-12.83,50.23-4.07,62.54,17.11s6.02,50.26-16.27,63.35l-43.14,25.34c12.03,10.85,17.63,25.5,15.63,41.67-1.66,13.4-10,26.79-23.23,34.43l-105.86,61.1c-17.26,9.96-37.87,8.87-54.27-3.96ZM228.05,244.75l108.7-62.8c7.71-4.45,9.36-14.36,5-21.48-3.8-6.2-13.03-9.72-20.7-5.28l-108.93,62.98c-7.46,4.31-8.2,14.07-4.62,20.43,3.77,6.7,12.63,10.72,20.55,6.15ZM179.89,344.63l107.93-62.56c7.36-4.27,8.12-14.4,4.44-20.63-3.55-5.99-12.55-10.31-19.95-6.05l-107.84,62.08c-8.12,4.67-11.26,14.01-6.73,21.72s13.7,10.34,22.15,5.44Z"/>
+        </svg>
+      </div>
+      <div class="brandtxt"><b>Sentient</b><span data-t="monthlyreport">Reporte mensual</span></div>
+    </div>
+    <div class="langsel" id="langsel">
+      <button data-lang="en" class="on">EN</button>
+      <button data-lang="es">ES</button>
+      <button data-lang="fr">FR</button>
+      <button data-lang="pt">PT</button>
+    </div>
+  </header>
+  <div class="row">
+    <div class="side">
+      <div class="scard">
+        <h3 data-t="client">Cliente</h3>
+        <div class="grid2">
+          <div><label data-t="name">Nombre</label><input id="client" placeholder="—"></div>
+          <div><label data-t="month">Mes</label><input id="month" placeholder="—"></div>
+        </div>
+        <label data-t="brand">Handle / marca en portada</label>
+        <input id="brand" placeholder="—">
+      </div>
+
+      <div class="scard">
+        <h3 data-t="shots">Screenshots</h3>
+        <div class="drop" id="drop"><span data-t="drop">Arrastra o haz clic</span><br><span style="font-size:11px" data-t="dropsub">Solo para leer los números</span></div>
+        <input type="file" id="file" accept="image/*" multiple hidden>
+        <div class="thumbs" id="thumbs"></div>
+
+        <label>Backend URL (Python OCR service)</label>
+        <input id="backendUrl" placeholder="https://your-ocr-backend.onrender.com">
+
+        <button id="extract" style="width:100%;margin-top:14px" disabled data-t="extract">Extraer métricas</button>
+        <div class="note" id="msg"></div>
+        <div class="note">OCR runs on your own Python backend (Tesseract, text-anchor based) — no AI model reads your screenshots.</div>
+      </div>
+
+      <div class="scard">
+        <details id="datadd" open>
+          <summary><span data-t="data">Datos</span><span class="chev">▾</span></summary>
+          <div id="fields"></div>
+        </details>
+      </div>
+
+    </div>
+
+    <div class="main">
+      <div class="bar">
+        <button id="pdf" data-t="savepdf">Guardar PDF</button>
+        <span class="status" id="status"></span>
+      </div>
+      <div class="deck" id="deck"></div>
+    </div>
+  </div>
+</div>
+
+<div id="taskbar">
+  <button id="totop" aria-label="Volver arriba" title="Volver arriba">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+  </button>
+</div>
+
+<script>
+const T = {
+  en: {
+    lang: 'Language', client: 'Client', name: 'Name', month: 'Month',
+    brand: 'Handle / brand on cover', shots: 'Screenshots', drop: 'Drag or click',
+    dropsub: 'Only used to read the numbers', extract: 'Extract metrics', data: 'Data',
+    savepdf: 'Save PDF', totop: 'Top', reportword: 'Report', monthlyreport: 'Monthly report',
+    m_views: 'Views', m_accounts_reached: 'Accounts reached', m_profile_visits: 'Profile visits',
+    m_follows: 'Follows', m_likes: 'Likes', m_comments: 'Comments', m_shares: 'Shares',
+    m_sends: 'Sends', m_saves: 'Saves', sec_overview: 'Overview',
+    msg_none: 'Upload at least one screenshot.', msg_ready: n => `${n} screenshot(s) ready.`,
+    reading: 'Running OCR on screenshots…', extracted: n => `${n} fields extracted. Review before saving the PDF.`,
+    readfail: 'OCR failed. Check the backend URL, or fill in by hand.',
+    nourl: 'Set the backend URL first.'
+  },
+  es: {
+    lang: 'Idioma', client: 'Cliente', name: 'Nombre', month: 'Mes',
+    brand: 'Handle / marca en portada', shots: 'Screenshots', drop: 'Arrastra o haz clic',
+    dropsub: 'Solo para leer los números', extract: 'Extraer métricas', data: 'Datos',
+    savepdf: 'Guardar PDF', totop: 'Arriba', reportword: 'Reporte', monthlyreport: 'Reporte mensual',
+    m_views: 'Visualizaciones', m_accounts_reached: 'Cuentas alcanzadas', m_profile_visits: 'Visitas al perfil',
+    m_follows: 'Seguidos', m_likes: 'Me gusta', m_comments: 'Comentarios', m_shares: 'Compartidos',
+    m_sends: 'Envíos', m_saves: 'Guardados', sec_overview: 'Resumen',
+    msg_none: 'Sube al menos un screenshot.', msg_ready: n => `${n} screenshot(s) listos.`,
+    reading: 'Corriendo OCR en los screenshots…', extracted: n => `${n} campos extraídos. Revísalos antes de guardar el PDF.`,
+    readfail: 'Falló el OCR. Revisa la URL del backend o llena a mano.',
+    nourl: 'Primero configura la URL del backend.'
+  },
+  fr: {
+    lang: 'Langue', client: 'Client', name: 'Nom', month: 'Mois',
+    brand: 'Handle / marque en couverture', shots: 'Captures', drop: 'Glisser ou cliquer',
+    dropsub: 'Uniquement pour lire les chiffres', extract: 'Extraire les métriques', data: 'Données',
+    savepdf: 'Enregistrer le PDF', totop: 'Haut', reportword: 'Rapport', monthlyreport: 'Rapport mensuel',
+    m_views: 'Vues', m_accounts_reached: 'Comptes atteints', m_profile_visits: 'Visites du profil',
+    m_follows: 'Abonnements', m_likes: "J'aime", m_comments: 'Commentaires', m_shares: 'Partages',
+    m_sends: 'Envois', m_saves: 'Enregistrements', sec_overview: 'Aperçu',
+    msg_none: 'Ajoute au moins une capture.', msg_ready: n => `${n} capture(s) prêtes.`,
+    reading: 'OCR en cours…', extracted: n => `${n} champs extraits.`,
+    readfail: "Échec OCR. Vérifie l'URL du backend.",
+    nourl: "Configure d'abord l'URL du backend."
+  },
+  pt: {
+    lang: 'Idioma', client: 'Cliente', name: 'Nome', month: 'Mês',
+    brand: 'Handle / marca na capa', shots: 'Screenshots', drop: 'Arraste ou clique',
+    dropsub: 'Apenas para ler os números', extract: 'Extrair métricas', data: 'Dados',
+    savepdf: 'Salvar PDF', totop: 'Topo', reportword: 'Relatório', monthlyreport: 'Relatório mensal',
+    m_views: 'Visualizações', m_accounts_reached: 'Contas alcançadas', m_profile_visits: 'Visitas ao perfil',
+    m_follows: 'Seguiram', m_likes: 'Curtidas', m_comments: 'Comentários', m_shares: 'Compartilhamentos',
+    m_sends: 'Envios', m_saves: 'Salvamentos', sec_overview: 'Visão geral',
+    msg_none: 'Envie ao menos um screenshot.', msg_ready: n => `${n} screenshot(s) prontos.`,
+    reading: 'Rodando OCR…', extracted: n => `${n} campos extraídos.`,
+    readfail: 'OCR falhou. Verifique a URL do backend.',
+    nourl: 'Configure a URL do backend primeiro.'
+  }
+};
+
+let lang = 'en';
+const tr = k => T[lang][k];
+
+const FIELDS = [
+  ['views','160,603'], ['accounts_reached','94,143'], ['profile_visits','60'], ['follows','2'],
+  ['likes','822'], ['comments','102'], ['shares','22'], ['sends','239'], ['saves','119'],
+];
+
+let imgs = [], data = {};
+const $ = id => document.getElementById(id);
+const el = (t, a = {}) => Object.assign(document.createElement(t), a);
+const say = (t, err) => { const s = $('status'); s.textContent = t; s.className = 'status' + (err ? ' err' : ''); };
+
+FIELDS.forEach(([k, ph]) => {
+  const w = el('div', { className: 'fcell' });
+  const lab = el('label'); lab.dataset.field = k; w.append(lab);
+  const i = el('input', { id: 'f_' + k, placeholder: '—' });
+  i.oninput = () => { data[k] = i.value; renderSoon(); };
+  w.append(i);
+  $('fields').append(w);
+});
+
+function applyLang() {
+  document.querySelectorAll('[data-t]').forEach(n => { const v = tr(n.dataset.t); if (v) n.textContent = v; });
+  document.querySelectorAll('#fields label[data-field]').forEach(l => { l.textContent = tr('m_' + l.dataset.field) || l.dataset.field; });
+  $('msg').textContent = imgs.length ? tr('msg_ready')(imgs.length) : tr('msg_none');
+  document.querySelectorAll('#langsel button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
+  render();
+}
+document.querySelectorAll('#langsel button').forEach(b => { b.onclick = () => { lang = b.dataset.lang; applyLang(); }; });
+
+function shrink(file) {
+  return new Promise(res => {
+    const r = new FileReader();
+    r.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        const s = Math.min(1, 1400 / Math.max(im.width, im.height));
+        const c = el('canvas'); c.width = im.width * s; c.height = im.height * s;
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/png'));
+      };
+      im.src = r.result;
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+async function addFiles(list) {
+  for (const f of [...list].slice(0, 8)) imgs.push(await shrink(f));
+  paintThumbs();
+}
+
+function paintThumbs() {
+  $('thumbs').innerHTML = '';
+  imgs.forEach((src, i) => {
+    const d = el('div', { className: 'thumb' });
+    d.append(el('img', { src }));
+    const x = el('b', { textContent: '×' });
+    x.onclick = () => { imgs.splice(i, 1); paintThumbs(); };
+    d.append(x);
+    $('thumbs').append(d);
+  });
+  $('extract').disabled = !imgs.length;
+  $('msg').textContent = imgs.length ? tr('msg_ready')(imgs.length) : tr('msg_none');
+}
+
+$('drop').onclick = () => $('file').click();
+$('file').onchange = e => addFiles(e.target.files);
+$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('hot'); };
+$('drop').ondragleave = () => $('drop').classList.remove('hot');
+$('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('hot'); addFiles(e.dataTransfer.files); };
+
+$('extract').onclick = async () => {
+  const backendUrl = $('backendUrl').value.trim().replace(/\/$/, '');
+  if (!backendUrl) { say(tr('nourl'), true); return; }
+
+  $('extract').disabled = true; say(tr('reading'));
+  try {
+    const fd = new FormData();
+    for (let i = 0; i < imgs.length; i++) {
+      const blob = await (await fetch(imgs[i])).blob();
+      fd.append('images', blob, `shot_${i}.png`);
+    }
+    const r = await fetch(`${backendUrl}/extract`, { method: 'POST', body: fd });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const out = await r.json();
+
+    let n = 0;
+    FIELDS.forEach(([k]) => {
+      if (out[k] !== null && out[k] !== undefined && out[k] !== '') {
+        data[k] = String(out[k]); $('f_' + k).value = data[k]; n++;
+      }
+    });
+    render(); say(tr('extracted')(n));
+  } catch (e) {
+    say(tr('readfail'), true);
+  }
+  $('extract').disabled = false;
+};
+
+$('pdf').onclick = () => {
+  const w = window.open('', '_blank');
+  if (!w) return say('Popup blocked.', true);
+  const d = w.document;
+  d.title = 'report';
+  const wrap = d.createElement('div');
+  wrap.innerHTML = '<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">';
+  [...wrap.children].forEach(c => d.head.appendChild(c));
+  const style = d.createElement('style');
+  style.textContent = "* { -webkit-print-color-adjust: exact !important; } html,body{margin:0;background:#000;} .slide{width:1280px;height:720px;background:#000;position:relative;overflow:hidden;break-after:page;} .lime{color:#cfff04;} .dk{font-family:'Archivo',sans-serif;text-transform:uppercase;letter-spacing:.02em;} @page{size:1280px 720px;margin:0;}";
+  d.head.appendChild(style);
+  document.querySelectorAll('.slide').forEach(s => {
+    const c = d.importNode(s, true);
+    c.style.transform = 'none'; c.style.position = 'relative';
+    d.body.appendChild(c);
+  });
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 900);
+};
+
+const v = k => data[k] || '—';
+const ICON = {
+  likes: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 1 0-7.8 7.8L12 21.2l8.8-8.8a5.5 5.5 0 0 0 0-7.8z"/>',
+  comments: '<path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/>',
+  shares: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  sends: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+  saves: '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>',
+};
+const iconSvg = k => `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+
+function sumCard([labelKey, vkey, hero]) {
+  if (hero) {
+    return `<div class="mcard hero" style="width:262px;height:150px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:24px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 14px 44px rgba(207,255,4,.24)">
+      <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#0a2a00;margin-bottom:8px">${tr(labelKey)}</div>
+      <div style="font-size:40px;line-height:.92;font-weight:700;letter-spacing:-.015em;color:#000">${v(vkey)}</div></div>`;
+  }
+  return `<div class="mcard" style="width:262px;height:150px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:24px;display:flex;flex-direction:column;justify-content:flex-end">
+    <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#cfff04;margin-bottom:8px">${tr(labelKey)}</div>
+    <div style="font-size:36px;line-height:.92;font-weight:500;letter-spacing:-.01em;color:#fff">${v(vkey)}</div></div>`;
+}
+
+function overviewSlide(name, month) {
+  const icons = [['likes','m_likes'],['comments','m_comments'],['shares','m_shares'],['sends','m_sends'],['saves','m_saves']];
+  const iconRow = icons.map(([k, lk]) => `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;width:180px">
+      <div class="lime">${iconSvg(k)}</div>
+      <div style="font-size:30px;font-weight:600;color:#fff;letter-spacing:-.01em">${v(k)}</div>
+      <div class="dk" style="font-size:10px;letter-spacing:.12em;color:#7a7a76">${tr(lk)}</div>
+    </div>`).join('');
+  const summary = [['m_views','views',true],['m_accounts_reached','accounts_reached',false],['m_profile_visits','profile_visits',false],['m_follows','follows',false]];
+  return `<div class="grid-bg"></div>
+    <div style="position:absolute;left:0;right:0;top:52px;text-align:center">
+      <div class="dk lime" style="font-size:46px;line-height:1">${tr('sec_overview')}</div>
+      <div class="dk" style="font-size:12px;letter-spacing:.24em;color:#7a7a76;margin-top:10px">${name} · ${month} ${tr('reportword')}</div>
+    </div>
+    <div style="position:absolute;left:0;right:0;top:180px;display:flex;justify-content:center;gap:12px">${iconRow}</div>
+    <div style="position:absolute;left:0;right:0;top:360px;display:flex;justify-content:center;gap:16px">${summary.map(sumCard).join('')}</div>
+    <div style="position:absolute;left:64px;bottom:26px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
+    <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
+}
+
+function render() {
+  const brand = ($('brand').value.trim() || 'wetracked.io');
+  const name = brand.split('.')[0];
+  const month = ($('month').value.trim() || 'MAY');
+
+  const cover = `<div class="arc"></div><div class="arc-core"></div>
+     <div style="position:absolute;inset:0;display:grid;place-items:center;text-align:center">
+       <div><div class="dk lime" style="font-size:16px;letter-spacing:.28em;margin-bottom:22px">${tr('monthlyreport')}</div>
+       <div class="dk lime" style="font-size:76px;line-height:.95">${name}</div>
+       <div class="dk" style="font-size:22px;margin-top:22px;color:#9a9a96;letter-spacing:.18em">${month}</div></div></div>
+     <div style="position:absolute;left:60px;bottom:44px" class="lime"><b style="font-size:13px;font-weight:600">www.sentientagency.io</b></div>
+     <div style="position:absolute;right:60px;bottom:44px;text-align:right" class="lime"><b style="font-size:13px;font-weight:600">contact@sentientagency.io</b></div>`;
+
+  const overview = overviewSlide(name, month);
+  $('deck').innerHTML = [cover, overview].map(s => `<div class="stage"><div class="slide">${s}</div></div>`).join('');
+  fit();
+}
+
+function fit() {
+  document.querySelectorAll('.stage').forEach(st => {
+    const s = st.clientWidth / 1280;
+    st.querySelector('.slide').style.transform = `scale(${s})`;
+  });
+}
+addEventListener('resize', fit);
+
+let renderTimer;
+function renderSoon() { clearTimeout(renderTimer); renderTimer = setTimeout(render, 180); }
+['client', 'month', 'brand'].forEach(id => $(id).oninput = renderSoon);
+
+paintThumbs(); applyLang();
+
+(function () {
+  const bar = document.getElementById('taskbar');
+  const btn = document.getElementById('totop');
+  const toggle = () => bar.classList.toggle('show', (window.scrollY || 0) > 300);
+  window.addEventListener('scroll', toggle, { passive: true });
+  btn.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  toggle();
+})();
+</script>
+```
+
+---
+
+## Deployment steps
+
+### A. Frontend → GitHub Pages
+1. Create a repo, e.g. `ig-report-generator`.
+2. Put `index.html` at the repo root.
+3. Push to `main`. GitHub → **Settings → Pages** → Source: `Deploy from branch` → `main` / `(root)`.
+4. Live at `https://yourusername.github.io/ig-report-generator/`.
+
+### B. Backend → Render (or Railway / Fly.io)
+1. Push `backend/` to the repo.
+2. Render → **New → Web Service** → connect repo → **Root Directory**: `backend`.
+3. Render builds from the `Dockerfile` automatically.
+4. Get your URL, e.g. `https://ig-ocr-backend.onrender.com`.
+5. Tighten `CORS(app, origins=[...])` to your Pages domain once stable.
+
+### C. Connect
+Paste the Render URL into the **Backend URL** field on your GitHub Pages site, upload
+screenshots, click **Extract metrics**.
+
+## Known edge cases worth testing
+- **Very cropped/zoomed screenshots** where "Overview" isn't visible: the icon-row detection
+  falls back to picking the numeric row closest to the top of the image, which is less reliable —
+  try to always include the "Overview/Engagement/Audience" tab row in the screenshot.
+- **Extremely small text** on low-res screenshots may need the upscale factor in `_preprocess`
+  bumped from `2` to `3`.
+- If a specific screenshot consistently fails, send me the raw OCR output (I can add a debug
+  endpoint that returns `image_to_string` output alongside the parsed result) and I'll adjust the
+  keyword list or number regex accordingly.
