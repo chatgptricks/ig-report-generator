@@ -24,15 +24,16 @@ ICON_ORDER = ["likes", "comments", "shares", "sends", "saves"]
 
 # Multi-language label text used to find each Summary-grid card
 LABEL_KEYWORDS = {
-    "views": ["views", "vistas", "visualizacoes", "visualizações", "vues"],
+    "views": ["views", "vistas", "visualizacoes", "visualizaciones", "vues", "reproducciones"],
     "accounts_reached": ["accounts reached", "cuentas alcanzadas", "contas alcancadas",
                           "contas alcançadas", "comptes atteints"],
-    "profile_visits": ["profile visits", "visitas al perfil", "visitas ao perfil",
+    "profile_visits": ["profile visits", "visitas al perfil", "visitas del perfil", "visitas ao perfil",
                         "visites du profil"],
-    "follows": ["follows", "seguidores nuevos", "seguiram", "abonnements"],
+    "follows": ["follows", "seguidores nuevos", "seguidores", "seguiram", "abonnements"],
 }
 
-ANCHOR_WORD = "overview"
+# Anchors used to locate the bottom of the 5-icon engagement row across languages
+ANCHOR_KEYWORDS = ["overview", "resumen", "visão geral", "visao geral", "aperçu", "apercu"]
 
 # A full numeric token: 606 / 4.9K / 1,170,214 / 68,460 -- but NOT things like "5:14" or "79%"
 NUMBER_TOKEN_RE = re.compile(r"^[\d][\d.,]*[KkMm]?$")
@@ -48,6 +49,10 @@ def _preprocess(image_bytes: bytes):
     scale = 2 if max(h, w) < 1600 else 1
     if scale > 1:
         gray = cv2.resize(gray, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+
+    # Invert dark mode screenshots (white text on dark bg) to black text on white bg for optimal Tesseract OCR
+    if np.mean(gray) < 127:
+        gray = cv2.bitwise_not(gray)
 
     thresh = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
@@ -96,7 +101,7 @@ def _is_number_word(text: str) -> bool:
 
 
 def _extract_icon_row(words: list[dict], overview_y: int | None, scale: int) -> dict:
-    """Find the 5 engagement numbers sitting just above the 'Overview' anchor,
+    """Find the 5 engagement numbers sitting just above the anchor tab,
     ordered left-to-right, and map them by position to likes/comments/shares/sends/saves."""
     if overview_y is not None:
         candidates = [w for w in words if w["y"] < overview_y and _is_number_word(w["text"])]
@@ -120,15 +125,15 @@ def _extract_icon_row(words: list[dict], overview_y: int | None, scale: int) -> 
     return result
 
 
-def _closest_number_below(lines: list[dict], label_line: dict, img_h: int) -> str | None:
-    """Find the number line that best matches this label: below it, and left-aligned
-    with it (handles multi-column grids, unlike naive 'next line' logic)."""
+def _closest_number_near_label(lines: list[dict], label_line: dict, img_h: int) -> str | None:
+    """Find the number line that best matches this label: nearby (below or above) and left-aligned
+    with it (handles multi-column grid cards in various IG UI layouts)."""
     best_val, best_score = None, None
     max_gap = img_h * 0.15
     for line in lines:
-        if line["y0"] <= label_line["y0"]:
+        if line == label_line:
             continue
-        dy = line["y0"] - label_line["y0"]
+        dy = abs(line["y0"] - label_line["y0"])
         if dy > max_gap:
             continue
         m = NUMBER_SEARCH_RE.search(line["text"])
@@ -148,7 +153,7 @@ def _extract_summary_grid(lines: list[dict], img_h: int) -> dict:
         for line in lines:
             norm = line["text"].lower()
             if any(kw in norm for kw in keywords):
-                val = _closest_number_below(lines, line, img_h)
+                val = _closest_number_near_label(lines, line, img_h)
                 if val:
                     result[field] = val
                 break
@@ -164,7 +169,8 @@ def extract_fields_from_image(image_bytes: bytes) -> dict:
 
     overview_y = None
     for line in lines:
-        if ANCHOR_WORD in line["text"].lower():
+        line_norm = line["text"].lower()
+        if any(anchor in line_norm for anchor in ANCHOR_KEYWORDS):
             overview_y = line["y0"]
             break
 
@@ -187,3 +193,4 @@ def extract_fields_from_images(images: list[bytes]) -> dict:
             if merged.get(k) is None and val:
                 merged[k] = val
     return merged
+
