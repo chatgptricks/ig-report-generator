@@ -161,7 +161,7 @@
         <div class="thumbs" id="thumbs"></div>
 
         <label>Backend URL (Python OCR service)</label>
-        <input id="backendUrl" placeholder="https://your-ocr-backend.onrender.com">
+        <input id="backendUrl" value="https://ig-report-ocr-backend.onrender.com" placeholder="https://ig-report-ocr-backend.onrender.com">
 
         <button id="extract" style="width:100%;margin-top:14px" disabled data-t="extract">Extraer métricas</button>
         <div class="note" id="msg"></div>
@@ -323,7 +323,7 @@ $('drop').ondragleave = () => $('drop').classList.remove('hot');
 $('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('hot'); addFiles(e.dataTransfer.files); };
 
 $('extract').onclick = async () => {
-  const backendUrl = $('backendUrl').value.trim().replace(/\/$/, '');
+  const backendUrl = ($('backendUrl').value.trim() || 'https://ig-report-ocr-backend.onrender.com').replace(/\/$/, '');
   if (!backendUrl) { say(tr('nourl'), true); return; }
 
   $('extract').disabled = true; say(tr('reading'));
