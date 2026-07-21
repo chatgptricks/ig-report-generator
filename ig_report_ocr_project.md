@@ -478,8 +478,7 @@ returned JSON keys onto the form fields, so it works as-is with this backend.
         <input type="file" id="file" accept="image/*" multiple hidden>
         <div class="thumbs" id="thumbs"></div>
 
-        <label>Backend URL (Python OCR service)</label>
-        <input id="backendUrl" value="https://ig-report-ocr-backend.onrender.com" placeholder="https://ig-report-ocr-backend.onrender.com">
+        <input type="hidden" id="backendUrl" value="https://ig-report-ocr-backend.onrender.com">
 
         <button id="extract" style="width:100%;margin-top:14px" disabled data-t="extract">Extraer métricas</button>
         <div class="note" id="msg"></div>
