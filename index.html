@@ -200,6 +200,7 @@ const T = {
     dropsub: 'Only used to read the numbers', extract: 'Extract metrics', data: 'Data',
     savepdf: 'Save PDF', totop: 'Top', reportword: 'Report', monthlyreport: 'Monthly report',
     m_views: 'Views', m_accounts_reached: 'Accounts reached', m_profile_visits: 'Profile visits',
+    m_average_watch_time: 'Average watch time',
     m_follows: 'Follows', m_likes: 'Likes', m_comments: 'Comments', m_shares: 'Shares',
     m_sends: 'Sends', m_saves: 'Saves', sec_overview: 'Overview',
     msg_none: 'Upload at least one screenshot.', msg_ready: n => `${n} screenshot(s) ready.`,
@@ -213,6 +214,7 @@ const T = {
     dropsub: 'Solo para leer los números', extract: 'Extraer métricas', data: 'Datos',
     savepdf: 'Guardar PDF', totop: 'Arriba', reportword: 'Reporte', monthlyreport: 'Reporte mensual',
     m_views: 'Visualizaciones', m_accounts_reached: 'Cuentas alcanzadas', m_profile_visits: 'Visitas al perfil',
+    m_average_watch_time: 'Tiempo promedio',
     m_follows: 'Seguidos', m_likes: 'Me gusta', m_comments: 'Comentarios', m_shares: 'Compartidos',
     m_sends: 'Envíos', m_saves: 'Guardados', sec_overview: 'Resumen',
     msg_none: 'Sube al menos un screenshot.', msg_ready: n => `${n} screenshot(s) listos.`,
@@ -226,6 +228,7 @@ const T = {
     dropsub: 'Uniquement pour lire les chiffres', extract: 'Extraire les métriques', data: 'Données',
     savepdf: 'Enregistrer le PDF', totop: 'Haut', reportword: 'Rapport', monthlyreport: 'Rapport mensuel',
     m_views: 'Vues', m_accounts_reached: 'Comptes atteints', m_profile_visits: 'Visites du profil',
+    m_average_watch_time: 'Temps visionnage',
     m_follows: 'Abonnements', m_likes: "J'aime", m_comments: 'Commentaires', m_shares: 'Partages',
     m_sends: 'Envois', m_saves: 'Enregistrements', sec_overview: 'Aperçu',
     msg_none: 'Ajoute au moins une capture.', msg_ready: n => `${n} capture(s) prêtes.`,
@@ -239,6 +242,7 @@ const T = {
     dropsub: 'Apenas para ler os números', extract: 'Extrair métricas', data: 'Dados',
     savepdf: 'Salvar PDF', totop: 'Topo', reportword: 'Relatório', monthlyreport: 'Relatório mensal',
     m_views: 'Visualizações', m_accounts_reached: 'Contas alcançadas', m_profile_visits: 'Visitas ao perfil',
+    m_average_watch_time: 'Tempo reprodução',
     m_follows: 'Seguiram', m_likes: 'Curtidas', m_comments: 'Comentários', m_shares: 'Compartilhamentos',
     m_sends: 'Envios', m_saves: 'Salvamentos', sec_overview: 'Visão geral',
     msg_none: 'Envie ao menos um screenshot.', msg_ready: n => `${n} screenshot(s) prontos.`,
@@ -252,7 +256,7 @@ let lang = 'en';
 const tr = k => T[lang][k];
 
 const FIELDS = [
-  ['views','160,603'], ['accounts_reached','94,143'], ['profile_visits','60'], ['follows','2'],
+  ['views','160,603'], ['accounts_reached','94,143'], ['profile_visits','60'], ['average_watch_time','8s'], ['follows','2'],
   ['likes','822'], ['comments','102'], ['shares','22'], ['sends','239'], ['saves','119'],
 ];
 
@@ -397,7 +401,9 @@ function overviewSlide(name, month) {
       <div style="font-size:30px;font-weight:600;color:#fff;letter-spacing:-.01em">${v(k)}</div>
       <div class="dk" style="font-size:10px;letter-spacing:.12em;color:#7a7a76">${tr(lk)}</div>
     </div>`).join('');
-  const summary = [['m_views','views',true],['m_accounts_reached','accounts_reached',false],['m_profile_visits','profile_visits',false],['m_follows','follows',false]];
+  const card3Label = data.average_watch_time ? 'm_average_watch_time' : 'm_profile_visits';
+  const card3Key = data.average_watch_time ? 'average_watch_time' : 'profile_visits';
+  const summary = [['m_views','views',true],['m_accounts_reached','accounts_reached',false],[card3Label,card3Key,false],['m_follows','follows',false]];
   return `<div class="grid-bg"></div>
     <div style="position:absolute;left:0;right:0;top:52px;text-align:center">
       <div class="dk lime" style="font-size:46px;line-height:1">${tr('sec_overview')}</div>
