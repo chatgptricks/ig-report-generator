@@ -317,6 +317,15 @@ def _crop_post_thumbnail(image_rgb: np.ndarray, overview_y: int | None, img_h: i
         else:
             crop = roi[int(roi_h * 0.05):int(roi_h * 0.95), int(roi_w * 0.10):int(roi_w * 0.90)]
 
+        # Trim away any outer white border/padding pixels
+        crop_gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
+        _, non_white_mask = cv2.threshold(crop_gray, 240, 255, cv2.THRESH_BINARY_INV)
+        non_white_pts = cv2.findNonZero(non_white_mask)
+        if non_white_pts is not None:
+            tx, ty, tw, th = cv2.boundingRect(non_white_pts)
+            if tw > crop.shape[1] * 0.5 and th > crop.shape[0] * 0.5:
+                crop = crop[ty:ty+th, tx:tx+tw]
+
         pil_crop = Image.fromarray(crop)
         pil_crop.thumbnail((600, 600), Image.Resampling.LANCZOS)
 

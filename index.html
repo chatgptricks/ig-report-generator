@@ -404,7 +404,7 @@ function postSlide(post, idx, total, name, month) {
   const badgeStyle = isReel ? 'background:#cfff04;color:#000;' : 'background:#1a1a1a;color:#cfff04;border:1px solid #cfff04;';
 
   const thumbHtml = post.post_thumbnail
-    ? `<img src="${post.post_thumbnail}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`
+    ? `<img src="${post.post_thumbnail}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;display:block">`
     : `<div style="display:grid;place-items:center;height:100%;color:#5a5a56;font-size:10px;font-weight:600">NO PREVIEW</div>`;
 
   const icons = [['likes','m_likes'],['comments','m_comments'],['shares','m_shares'],['sends','m_sends'],['saves','m_saves']];
@@ -445,7 +445,7 @@ function postSlide(post, idx, total, name, month) {
     <div style="position:absolute;left:64px;right:64px;top:40px;display:flex;align-items:center;justify-content:space-between">
       <div style="display:flex;align-items:center;gap:18px">
         <!-- Compact Post Thumbnail Badge -->
-        <div style="width:72px;height:90px;background:#000;border:1.5px solid #cfff04;border-radius:12px;box-shadow:0 6px 20px rgba(207,255,4,.25);overflow:hidden;flex-shrink:0;padding:2px">
+        <div style="width:72px;height:90px;background:#000;border:1.5px solid #cfff04;border-radius:12px;box-shadow:0 6px 20px rgba(207,255,4,.25);overflow:hidden;flex-shrink:0;padding:0">
           ${thumbHtml}
         </div>
         <div>
