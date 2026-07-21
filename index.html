@@ -521,6 +521,100 @@ function postSlide(post, idx, total, name, month) {
     <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
 }
 
+function parseMetricValue(str) {
+  if (!str) return 0;
+  const cleaned = String(str).replace(/[^\d.]/g, '');
+  const val = parseFloat(cleaned);
+  return isNaN(val) ? 0 : val;
+}
+
+function formatMetricNumber(num) {
+  if (isNaN(num)) return '—';
+  return num.toLocaleString('en-US');
+}
+
+function totalsSlide(posts, name, month) {
+  let totalLikes = 0, totalComments = 0, totalShares = 0, totalSends = 0, totalSaves = 0;
+  let totalViews = 0, totalAccounts = 0, totalProfileVisits = 0, totalFollows = 0;
+  let hasWatchTime = false, watchTimeSum = 0;
+
+  posts.forEach(p => {
+    totalLikes += parseMetricValue(p.likes);
+    totalComments += parseMetricValue(p.comments);
+    totalShares += parseMetricValue(p.shares);
+    totalSends += parseMetricValue(p.sends);
+    totalSaves += parseMetricValue(p.saves);
+
+    totalViews += parseMetricValue(p.views);
+    totalAccounts += parseMetricValue(p.accounts_reached);
+    totalProfileVisits += parseMetricValue(p.profile_visits);
+    totalFollows += parseMetricValue(p.follows);
+
+    if (p.average_watch_time) {
+      hasWatchTime = true;
+      watchTimeSum += parseMetricValue(p.average_watch_time);
+    }
+  });
+
+  const icons = [
+    ['likes', 'm_likes', formatMetricNumber(totalLikes)],
+    ['comments', 'm_comments', formatMetricNumber(totalComments)],
+    ['shares', 'm_shares', formatMetricNumber(totalShares)],
+    ['sends', 'm_sends', formatMetricNumber(totalSends)],
+    ['saves', 'm_saves', formatMetricNumber(totalSaves)],
+  ];
+
+  const iconRowHtml = icons.map(([k, lk, val]) => `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:180px">
+      <div class="lime">${iconSvg(k)}</div>
+      <div style="font-size:28px;font-weight:700;color:#fff">${val}</div>
+      <div class="dk" style="font-size:10px;letter-spacing:.12em;color:#7a7a76">${tr(lk)}</div>
+    </div>`).join('');
+
+  const card3Label = hasWatchTime ? 'm_average_watch_time' : 'm_profile_visits';
+  const card3Val = hasWatchTime
+    ? `${Math.round(watchTimeSum / Math.max(1, posts.length))}s (avg)`
+    : formatMetricNumber(totalProfileVisits);
+
+  const summary = [
+    ['m_views', formatMetricNumber(totalViews), true],
+    ['m_accounts_reached', formatMetricNumber(totalAccounts), false],
+    [card3Label, card3Val, false],
+    ['m_follows', formatMetricNumber(totalFollows), false]
+  ];
+
+  const renderCard = ([labelKey, val, hero]) => {
+    if (hero) {
+      return `<div class="mcard hero" style="width:262px;height:145px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 14px 44px rgba(207,255,4,.24)">
+        <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#0a2a00;margin-bottom:8px">${tr(labelKey)}</div>
+        <div style="font-size:40px;line-height:.9;font-weight:700;letter-spacing:-.015em;color:#000">${val}</div></div>`;
+    }
+    return `<div class="mcard" style="width:262px;height:145px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end">
+      <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#cfff04;margin-bottom:8px">${tr(labelKey)}</div>
+      <div style="font-size:36px;line-height:.9;font-weight:500;letter-spacing:-.01em;color:#fff">${val}</div></div>`;
+  };
+
+  return `<div class="grid-bg"></div>
+
+    <!-- Header Bar -->
+    <div style="position:absolute;left:64px;right:64px;top:44px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span class="dk" style="padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.14em;background:#cfff04;color:#000;">CUMULATIVE TOTALS</span>
+        <div class="dk lime" style="font-size:32px;line-height:1">${name} · ${posts.length} Posts Overview</div>
+      </div>
+      <div class="dk" style="font-size:12px;letter-spacing:.2em;color:#7a7a76">${month} ${tr('reportword')}</div>
+    </div>
+
+    <!-- Total Engagement Icons Row -->
+    <div style="position:absolute;left:0;right:0;top:180px;display:flex;justify-content:center;gap:12px">${iconRowHtml}</div>
+
+    <!-- Total Summary Cards Grid -->
+    <div style="position:absolute;left:0;right:0;top:360px;display:flex;justify-content:center;gap:16px">${summary.map(renderCard).join('')}</div>
+
+    <div style="position:absolute;left:64px;bottom:26px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
+    <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
+}
+
 function proofSlide(imgs, name, month) {
   const count = Math.min(imgs.length, 5);
   const gallery = imgs.slice(0, count).map(src => `
@@ -558,7 +652,15 @@ function render() {
   const postsToRender = extractedPosts.length ? extractedPosts : [data];
   const postSlides = postsToRender.map((p, idx) => postSlide(p, idx, postsToRender.length, name, month));
 
-  const slides = [cover, ...postSlides];
+  const slides = [cover];
+
+  // IF MORE THAN 1 SCREENSHOT IS UPLOADED: Add Slide 2 with the Cumulative Totals Overview!
+  if (postsToRender.length > 1) {
+    slides.push(totalsSlide(postsToRender, name, month));
+  }
+
+  slides.push(...postSlides);
+
   if (imgs.length > 0) {
     slides.push(proofSlide(imgs, name, month));
   }
