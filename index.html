@@ -367,23 +367,69 @@ async function doExtract() {
 
 $('extract').onclick = doExtract;
 
-$('pdf').onclick = () => {
+$('pdf').onclick = async () => {
   const w = window.open('', '_blank');
-  if (!w) return say('Popup blocked.', true);
+  if (!w) return say('Popup blocked. Please allow popups to save PDF.', true);
   const d = w.document;
-  d.title = 'report';
-  const wrap = d.createElement('div');
-  wrap.innerHTML = '<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">';
-  [...wrap.children].forEach(c => d.head.appendChild(c));
-  const style = d.createElement('style');
-  style.textContent = "* { -webkit-print-color-adjust: exact !important; } html,body{margin:0;background:#000;} .slide{width:1280px;height:720px;background:#000;position:relative;overflow:hidden;break-after:page;} .lime{color:#cfff04;} .dk{font-family:'Archivo',sans-serif;text-transform:uppercase;letter-spacing:.02em;} @page{size:1280px 720px;margin:0;}";
-  d.head.appendChild(style);
-  document.querySelectorAll('.slide').forEach(s => {
-    const c = d.importNode(s, true);
-    c.style.transform = 'none'; c.style.position = 'relative';
-    d.body.appendChild(c);
+  d.title = `${($('brand').value.trim() || 'wetracked.io').split('.')[0]}_Instagram_Report`;
+
+  // Copy all font links, style tags, and CSS variables from main document
+  document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => {
+    d.head.appendChild(el.cloneNode(true));
   });
-  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 900);
+
+  // Add strict WYSIWYG print page formatting
+  const style = d.createElement('style');
+  style.textContent = `
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+    @page {
+      size: 1280px 720px;
+      margin: 0;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #000 !important;
+      width: 1280px !important;
+    }
+    .print-slide {
+      width: 1280px !important;
+      height: 720px !important;
+      position: relative !important;
+      overflow: hidden !important;
+      background: #000 !important;
+      page-break-after: always !important;
+      break-after: page !important;
+    }
+  `;
+  d.head.appendChild(style);
+
+  // Clone each slide node directly for 100% exact visual parity
+  document.querySelectorAll('.slide').forEach(s => {
+    const clone = s.cloneNode(true);
+    clone.className = 'print-slide';
+    clone.style.transform = 'none';
+    clone.style.position = 'relative';
+    d.body.appendChild(clone);
+  });
+
+  // Wait for all images in the print document to load
+  const imgs = [...d.querySelectorAll('img')];
+  await Promise.all(imgs.map(img => {
+    if (img.complete) return Promise.resolve();
+    return new Promise(res => { img.onload = res; img.onerror = res; });
+  }));
+
+  setTimeout(() => {
+    try {
+      w.focus();
+      w.print();
+    } catch (e) {}
+  }, 400);
 };
 
 const v = k => data[k] || '—';
