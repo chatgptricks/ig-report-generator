@@ -92,8 +92,8 @@ def _words(image_array) -> list[dict]:
 
 
 def _lines_from_words(words: list[dict]) -> list[dict]:
-    """Group OCR words into spatial lines based on vertical center alignment
-    rather than Tesseract block/line IDs which fragment formatted numbers across lines."""
+    """Group OCR words into spatial lines based on vertical center alignment,
+    and split text into separate column line items if separated by horizontal gaps (> 45px)."""
     if not words:
         return []
 
@@ -125,25 +125,46 @@ def _lines_from_words(words: list[dict]) -> list[dict]:
     result = []
     for group in line_groups:
         line_words = sorted(group["words"], key=lambda w: w["x"])
-        full_text = ""
-        for i, w in enumerate(line_words):
-            if i > 0:
-                prev = line_words[i - 1]["text"]
-                curr = w["text"]
-                if (prev.endswith(",") or prev.endswith(".")) and curr[0].isdigit():
-                    full_text += curr
-                else:
-                    full_text += " " + curr
-            else:
-                full_text = w["text"]
 
-        x0 = min(w["x"] for w in line_words)
-        result.append({
-            "text": full_text,
-            "x": x0,
-            "y0": group["y0"],
-            "words": line_words
-        })
+        # Split words into separate sub-lines if separated by horizontal column gaps (> 45px)
+        sub_clusters = []
+        curr_cluster = []
+        for w in line_words:
+            if not curr_cluster:
+                curr_cluster.append(w)
+            else:
+                prev = curr_cluster[-1]
+                gap = w["x"] - (prev["x"] + prev["w"])
+                if gap > 45:
+                    sub_clusters.append(curr_cluster)
+                    curr_cluster = [w]
+                else:
+                    curr_cluster.append(w)
+        if curr_cluster:
+            sub_clusters.append(curr_cluster)
+
+        for cluster in sub_clusters:
+            full_text = ""
+            for i, w in enumerate(cluster):
+                if i > 0:
+                    prev_w = cluster[i - 1]
+                    prev_text = prev_w["text"]
+                    curr_text = w["text"]
+                    gap_x = w["x"] - (prev_w["x"] + prev_w["w"])
+                    if gap_x < 25 and (prev_text.endswith(",") or prev_text.endswith(".")) and curr_text[0].isdigit():
+                        full_text += curr_text
+                    else:
+                        full_text += " " + curr_text
+                else:
+                    full_text = w["text"]
+
+            x0 = min(w["x"] for w in cluster)
+            result.append({
+                "text": full_text,
+                "x": x0,
+                "y0": group["y0"],
+                "words": cluster
+            })
 
     result.sort(key=lambda l: l["y0"])
     return result
