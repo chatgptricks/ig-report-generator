@@ -556,7 +556,7 @@ function totalsSlide(posts, name, month) {
     }
   });
 
-  const darkIconSvg = k => `<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#000000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+  const darkIconSvg = k => `<svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#000000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
 
   const icons = [
     ['likes', 'm_likes', formatMetricNumber(totalLikes)],
@@ -569,8 +569,8 @@ function totalsSlide(posts, name, month) {
   const iconRowHtml = icons.map(([k, lk, val]) => `
     <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:180px">
       <div style="color:#000">${darkIconSvg(k)}</div>
-      <div style="font-size:28px;font-weight:800;color:#000000">${val}</div>
-      <div class="dk" style="font-size:10px;letter-spacing:.14em;color:#1a1a1a;font-weight:700">${tr(lk)}</div>
+      <div style="font-size:38px;font-weight:800;color:#000000;line-height:1;margin:4px 0">${val}</div>
+      <div class="dk" style="font-size:11px;letter-spacing:.14em;color:#1a1a1a;font-weight:700">${tr(lk)}</div>
     </div>`).join('');
 
   const card3Label = hasWatchTime ? 'm_average_watch_time' : 'm_profile_visits';
