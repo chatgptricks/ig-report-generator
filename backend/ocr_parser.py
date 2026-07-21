@@ -59,14 +59,14 @@ def _preprocess(image_bytes: bytes):
         scale = 1.5
         gray = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
 
-    # Invert dark mode screenshots (white text on dark bg) to black text on white bg for optimal Tesseract OCR
+    # Invert dark mode screenshots (white text on dark bg) to black text on white bg
     if np.mean(gray) < 127:
         gray = cv2.bitwise_not(gray)
 
-    thresh = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 10
-    )
-    return thresh, scale
+    # Contrast normalization without destructive adaptive thresholding
+    gray = cv2.normalize(gray, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
+    return gray, scale
 
 
 def _words(image_array) -> list[dict]:
@@ -191,20 +191,22 @@ def _extract_icon_row(words: list[dict], overview_y: int | None, scale: float) -
 
 
 def _closest_number_near_label(lines: list[dict], label_line: dict, img_h: int, img_w: int, exclude_values: set, is_time: bool = False) -> str | None:
-    """Find the number line that best matches this label: nearby (below or above) and strictly
-    within the same grid card column (dx <= img_w * 0.30), ignoring already-used values."""
+    """Find the number line that best matches this label: strictly below the label and within the same grid column (dx <= img_w * 0.25)."""
     best_val, best_score = None, None
     max_gap = img_h * 0.18
-    max_dx = img_w * 0.30
+    max_dx = img_w * 0.25
 
     regex = TIME_SEARCH_RE if is_time else NUMBER_SEARCH_RE
 
     for line in lines:
         if line == label_line:
             continue
-        dy = abs(line["y0"] - label_line["y0"])
-        if dy > max_gap:
+
+        # Must be located below the card label line (dy_down >= -10)
+        dy_down = line["y0"] - label_line["y0"]
+        if dy_down < -10 or dy_down > max_gap:
             continue
+
         dx = abs(line["x"] - label_line["x"])
         if dx > max_dx:
             continue
@@ -217,7 +219,7 @@ def _closest_number_near_label(lines: list[dict], label_line: dict, img_h: int, 
         if not val_clean or val_clean in exclude_values:
             continue
 
-        score = dx + dy * 0.5
+        score = dx + dy_down * 0.5
         if best_score is None or score < best_score:
             best_score = score
             best_val = val_clean
@@ -277,3 +279,4 @@ def extract_fields_from_images(images: list[bytes]) -> dict:
             if merged.get(k) is None and val:
                 merged[k] = val
     return merged
+

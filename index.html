@@ -303,6 +303,7 @@ function shrink(file) {
 async function addFiles(list) {
   for (const f of [...list].slice(0, 8)) imgs.push(await shrink(f));
   paintThumbs();
+  if (imgs.length) doExtract();
 }
 
 function paintThumbs() {
@@ -325,7 +326,7 @@ $('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('hot')
 $('drop').ondragleave = () => $('drop').classList.remove('hot');
 $('drop').ondrop = e => { e.preventDefault(); $('drop').classList.remove('hot'); addFiles(e.dataTransfer.files); };
 
-$('extract').onclick = async () => {
+async function doExtract() {
   const backendUrl = ($('backendUrl').value.trim() || 'https://ig-report-ocr-backend.onrender.com').replace(/\/$/, '');
   if (!backendUrl) { say(tr('nourl'), true); return; }
 
@@ -351,7 +352,9 @@ $('extract').onclick = async () => {
     say(tr('readfail') + ` (${e.message || e})`, true);
   }
   $('extract').disabled = false;
-};
+}
+
+$('extract').onclick = doExtract;
 
 $('pdf').onclick = () => {
   const w = window.open('', '_blank');
