@@ -273,27 +273,47 @@ def _extract_summary_grid(lines: list[dict], img_h: int, img_w: int, icon_values
 
 
 def _crop_post_thumbnail(image_rgb: np.ndarray, overview_y: int | None, img_h: int, img_w: int) -> str | None:
-    """Crop the preview image sitting above the engagement icon row / Overview tab."""
+    """Detect and crop the exact post/reel preview thumbnail card sitting above the engagement icons."""
     try:
-        y1 = int(img_h * 0.11)
-        if overview_y and overview_y > img_h * 0.25:
-            y2 = int(overview_y - int(img_h * 0.08))
-        else:
-            y2 = int(img_h * 0.44)
+        y1 = int(img_h * 0.10)
+        y2 = int(overview_y - int(img_h * 0.05)) if overview_y and overview_y > img_h * 0.25 else int(img_h * 0.44)
 
-        if y2 <= y1 + 40:
+        if y2 <= y1 + 50:
             return None
 
-        x1 = int(img_w * 0.22)
-        x2 = int(img_w * 0.78)
+        x1 = int(img_w * 0.15)
+        x2 = int(img_w * 0.85)
 
-        crop = image_rgb[y1:y2, x1:x2]
+        roi = image_rgb[y1:y2, x1:x2]
+        roi_h, roi_w = roi.shape[0], roi.shape[1]
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+        bg_val = np.median(gray[:10, :10])
+        diff = cv2.absdiff(gray, int(bg_val))
+        _, mask = cv2.threshold(diff, 18, 255, cv2.THRESH_BINARY)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        best_rect = None
+        max_area = 0
+        for cnt in contours:
+            bx, by, bw, bh = cv2.boundingRect(cnt)
+            area = bw * bh
+            if area > max_area and bw > roi_w * 0.35 and bh > roi_h * 0.35:
+                max_area = area
+                best_rect = (bx, by, bw, bh)
+
+        if best_rect:
+            bx, by, bw, bh = best_rect
+            crop = roi[by:by+bh, bx:bx+bw]
+        else:
+            crop = roi[:, int(roi_w * 0.15):int(roi_w * 0.85)]
 
         pil_crop = Image.fromarray(crop)
-        pil_crop.thumbnail((450, 450), Image.Resampling.LANCZOS)
+        pil_crop.thumbnail((500, 500), Image.Resampling.LANCZOS)
 
         buffer = io.BytesIO()
-        pil_crop.save(buffer, format="JPEG", quality=88)
+        pil_crop.save(buffer, format="JPEG", quality=90)
         b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return f"data:image/jpeg;base64,{b64_str}"
     except Exception:
