@@ -120,6 +120,57 @@
                            linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
          background-size: 64px 64px; -webkit-mask: radial-gradient(ellipse 80% 70% at 50% 45%, #000 55%, transparent 100%);
          mask: radial-gradient(ellipse 80% 70% at 50% 45%, #000 55%, transparent 100%); }
+
+  @media print {
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+    @page {
+      size: 1280px 720px;
+      margin: 0;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #000 !important;
+    }
+    .topbar, .side, .bar, #taskbar {
+      display: none !important;
+    }
+    #app {
+      padding: 0 !important;
+      background: #000 !important;
+      border-radius: 0 !important;
+    }
+    .main {
+      min-width: 100% !important;
+      width: 1280px !important;
+    }
+    .stage {
+      width: 1280px !important;
+      height: 720px !important;
+      position: relative !important;
+      overflow: hidden !important;
+      background: #000 !important;
+      page-break-after: always !important;
+      break-after: page !important;
+      display: block !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .slide {
+      transform: none !important;
+      position: absolute !important;
+      inset: 0 !important;
+      width: 1280px !important;
+      height: 720px !important;
+      background: #000 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -368,68 +419,8 @@ async function doExtract() {
 $('extract').onclick = doExtract;
 
 $('pdf').onclick = async () => {
-  const w = window.open('', '_blank');
-  if (!w) return say('Popup blocked. Please allow popups to save PDF.', true);
-  const d = w.document;
-  d.title = `${($('brand').value.trim() || 'wetracked.io').split('.')[0]}_Instagram_Report`;
-
-  // Copy all font links, style tags, and CSS variables from main document
-  document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => {
-    d.head.appendChild(el.cloneNode(true));
-  });
-
-  // Add strict WYSIWYG print page formatting
-  const style = d.createElement('style');
-  style.textContent = `
-    * {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-      color-adjust: exact !important;
-    }
-    @page {
-      size: 1280px 720px;
-      margin: 0;
-    }
-    html, body {
-      margin: 0 !important;
-      padding: 0 !important;
-      background: #000 !important;
-      width: 1280px !important;
-    }
-    .print-slide {
-      width: 1280px !important;
-      height: 720px !important;
-      position: relative !important;
-      overflow: hidden !important;
-      background: #000 !important;
-      page-break-after: always !important;
-      break-after: page !important;
-    }
-  `;
-  d.head.appendChild(style);
-
-  // Clone each slide node directly for 100% exact visual parity
-  document.querySelectorAll('.slide').forEach(s => {
-    const clone = s.cloneNode(true);
-    clone.className = 'print-slide';
-    clone.style.transform = 'none';
-    clone.style.position = 'relative';
-    d.body.appendChild(clone);
-  });
-
-  // Wait for all images in the print document to load
-  const imgs = [...d.querySelectorAll('img')];
-  await Promise.all(imgs.map(img => {
-    if (img.complete) return Promise.resolve();
-    return new Promise(res => { img.onload = res; img.onerror = res; });
-  }));
-
-  setTimeout(() => {
-    try {
-      w.focus();
-      w.print();
-    } catch (e) {}
-  }, 400);
+  try { await document.fonts.ready; } catch (e) {}
+  window.print();
 };
 
 const v = k => data[k] || '—';
