@@ -287,10 +287,10 @@ def _crop_post_thumbnail(image_rgb: np.ndarray, overview_y: int | None, img_h: i
         crop = image_rgb[y1:y2, x1:x2]
 
         pil_crop = Image.fromarray(crop)
-        pil_crop.thumbnail((550, 550), Image.Resampling.LANCZOS)
+        pil_crop.thumbnail((600, 600), Image.Resampling.LANCZOS)
 
         buffer = io.BytesIO()
-        pil_crop.save(buffer, format="JPEG", quality=90)
+        pil_crop.save(buffer, format="JPEG", quality=95)
         b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
         return f"data:image/jpeg;base64,{b64_str}"
     except Exception:

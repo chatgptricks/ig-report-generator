@@ -404,23 +404,23 @@ function postSlide(post, idx, total, name, month) {
   const badgeStyle = isReel ? 'background:#cfff04;color:#000;' : 'background:#1a1a1a;color:#cfff04;border:1px solid #cfff04;';
 
   const thumbHtml = post.post_thumbnail
-    ? `<img src="${post.post_thumbnail}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:10px">`
-    : `<div style="display:grid;place-items:center;height:100%;color:#5a5a56;font-size:12px;font-weight:600">NO PREVIEW</div>`;
+    ? `<img src="${post.post_thumbnail}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`
+    : `<div style="display:grid;place-items:center;height:100%;color:#5a5a56;font-size:10px;font-weight:600">NO PREVIEW</div>`;
 
   const icons = [['likes','m_likes'],['comments','m_comments'],['shares','m_shares'],['sends','m_sends'],['saves','m_saves']];
   const getVal = k => (post[k] !== undefined && post[k] !== null && post[k] !== '') ? post[k] : (data[k] || '—');
 
   const iconRowHtml = icons.map(([k, lk]) => `
-    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-      <div class="lime" style="transform:scale(0.85)">${iconSvg(k)}</div>
-      <div style="font-size:22px;font-weight:700;color:#fff">${getVal(k)}</div>
-      <div class="dk" style="font-size:9px;letter-spacing:.08em;color:#7a7a76">${tr(lk)}</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:180px">
+      <div class="lime">${iconSvg(k)}</div>
+      <div style="font-size:28px;font-weight:700;color:#fff">${getVal(k)}</div>
+      <div class="dk" style="font-size:10px;letter-spacing:.12em;color:#7a7a76">${tr(lk)}</div>
     </div>`).join('');
 
   const card3Label = isReel ? 'm_average_watch_time' : 'm_profile_visits';
   const card3Key = isReel ? 'average_watch_time' : 'profile_visits';
 
-  const cards = [
+  const summary = [
     ['m_views', 'views', true],
     ['m_accounts_reached', 'accounts_reached', false],
     [card3Label, card3Key, false],
@@ -430,41 +430,40 @@ function postSlide(post, idx, total, name, month) {
   const renderCard = ([labelKey, vkey, hero]) => {
     const val = getVal(vkey);
     if (hero) {
-      return `<div class="mcard hero" style="width:260px;height:135px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 12px 36px rgba(207,255,4,.24)">
-        <div class="dk" style="font-size:12px;letter-spacing:.08em;color:#0a2a00;margin-bottom:6px">${tr(labelKey)}</div>
-        <div style="font-size:38px;line-height:.9;font-weight:700;letter-spacing:-.015em;color:#000">${val}</div></div>`;
+      return `<div class="mcard hero" style="width:262px;height:145px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 14px 44px rgba(207,255,4,.24)">
+        <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#0a2a00;margin-bottom:8px">${tr(labelKey)}</div>
+        <div style="font-size:40px;line-height:.9;font-weight:700;letter-spacing:-.015em;color:#000">${val}</div></div>`;
     }
-    return `<div class="mcard" style="width:260px;height:135px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end">
-      <div class="dk" style="font-size:12px;letter-spacing:.08em;color:#cfff04;margin-bottom:6px">${tr(labelKey)}</div>
-      <div style="font-size:34px;line-height:.9;font-weight:500;letter-spacing:-.01em;color:#fff">${val}</div></div>`;
+    return `<div class="mcard" style="width:262px;height:145px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end">
+      <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#cfff04;margin-bottom:8px">${tr(labelKey)}</div>
+      <div style="font-size:36px;line-height:.9;font-weight:500;letter-spacing:-.01em;color:#fff">${val}</div></div>`;
   };
 
   return `<div class="grid-bg"></div>
-    <div style="position:absolute;left:64px;right:64px;top:44px;display:flex;align-items:center;justify-content:space-between">
-      <div style="display:flex;align-items:center;gap:14px">
-        <span class="dk" style="padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.14em;${badgeStyle}">${typeLabel}</span>
-        <div class="dk lime" style="font-size:32px;line-height:1">${name} · Post #${idx + 1}</div>
-      </div>
-      <div class="dk" style="font-size:12px;letter-spacing:.2em;color:#7a7a76">${month} ${tr('reportword')}</div>
-    </div>
 
-    <!-- Main Content Grid -->
-    <div style="position:absolute;left:64px;right:64px;top:118px;bottom:70px;display:flex;gap:36px;align-items:center">
-      <!-- Left Column: Thumbnail + Engagement Row -->
-      <div style="flex:0 0 470px;display:flex;flex-direction:column;align-items:center;gap:16px">
-        <div style="width:230px;height:300px;background:#000;border:1px solid #2a2a2a;border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.7);overflow:hidden;display:flex;align-items:center;justify-content:center">
+    <!-- Header Bar with Compact Thumbnail Badge -->
+    <div style="position:absolute;left:64px;right:64px;top:40px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:18px">
+        <!-- Compact Post Thumbnail Badge -->
+        <div style="width:72px;height:90px;background:#000;border:1.5px solid #cfff04;border-radius:12px;box-shadow:0 6px 20px rgba(207,255,4,.25);overflow:hidden;flex-shrink:0;padding:2px">
           ${thumbHtml}
         </div>
-        <div style="width:100%;background:linear-gradient(155deg,#141414,#0b0b0b);border:1px solid #1e1e1e;border-radius:16px;padding:14px 10px;display:flex;justify-content:space-around">
-          ${iconRowHtml}
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <span class="dk" style="padding:4px 12px;border-radius:16px;font-size:10px;font-weight:700;letter-spacing:.14em;${badgeStyle}">${typeLabel}</span>
+            <span class="dk" style="font-size:12px;letter-spacing:.2em;color:#7a7a76">${month} ${tr('reportword')}</span>
+          </div>
+          <div class="dk lime" style="font-size:34px;line-height:1;font-weight:700">${name} · Post #${idx + 1}</div>
         </div>
       </div>
-
-      <!-- Right Column: 2x2 Summary Cards Grid -->
-      <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:20px;justify-items:center">
-        ${cards.map(renderCard).join('')}
-      </div>
+      <div class="dk" style="font-size:12px;letter-spacing:.24em;color:#7a7a76;text-align:right">PERFORMANCE OVERVIEW</div>
     </div>
+
+    <!-- Engagement Icons Row -->
+    <div style="position:absolute;left:0;right:0;top:180px;display:flex;justify-content:center;gap:12px">${iconRowHtml}</div>
+
+    <!-- Summary Cards Grid -->
+    <div style="position:absolute;left:0;right:0;top:360px;display:flex;justify-content:center;gap:16px">${summary.map(renderCard).join('')}</div>
 
     <div style="position:absolute;left:64px;bottom:26px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
     <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
