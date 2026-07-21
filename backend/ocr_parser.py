@@ -4,6 +4,7 @@ Works across iOS/Android, Reel/Post, and different screen sizes because it locat
 fields relative to always-present text anchors ("Overview", "Views", "Follows", etc.)
 instead of fixed pixel coordinates. No AI/LLM calls — OpenCV + Tesseract + geometry only.
 """
+import base64
 import io
 import re
 
@@ -15,7 +16,7 @@ from PIL import Image
 
 FIELD_KEYS = [
     "views", "accounts_reached", "profile_visits", "average_watch_time", "follows",
-    "likes", "comments", "shares", "sends", "saves", "post_type"
+    "likes", "comments", "shares", "sends", "saves", "post_type", "post_thumbnail"
 ]
 
 ICON_ORDER = ["likes", "comments", "shares", "sends", "saves"]
@@ -271,9 +272,40 @@ def _extract_summary_grid(lines: list[dict], img_h: int, img_w: int, icon_values
     return result
 
 
+def _crop_post_thumbnail(image_rgb: np.ndarray, overview_y: int | None, img_h: int, img_w: int) -> str | None:
+    """Crop the preview image sitting above the engagement icon row / Overview tab."""
+    try:
+        y1 = int(img_h * 0.11)
+        if overview_y and overview_y > img_h * 0.25:
+            y2 = int(overview_y - int(img_h * 0.08))
+        else:
+            y2 = int(img_h * 0.44)
+
+        if y2 <= y1 + 40:
+            return None
+
+        x1 = int(img_w * 0.22)
+        x2 = int(img_w * 0.78)
+
+        crop = image_rgb[y1:y2, x1:x2]
+
+        pil_crop = Image.fromarray(crop)
+        pil_crop.thumbnail((450, 450), Image.Resampling.LANCZOS)
+
+        buffer = io.BytesIO()
+        pil_crop.save(buffer, format="JPEG", quality=88)
+        b64_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{b64_str}"
+    except Exception:
+        return None
+
+
 def extract_fields_from_image(image_bytes: bytes) -> dict:
     processed, scale = _preprocess(image_bytes)
     img_h, img_w = processed.shape[0], processed.shape[1]
+
+    pil_orig = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    orig_rgb = np.array(pil_orig)
 
     words = _words(processed)
     lines = _lines_from_words(words)
@@ -288,6 +320,7 @@ def extract_fields_from_image(image_bytes: bytes) -> dict:
 
     found = {k: None for k in FIELD_KEYS}
     found["post_type"] = post_type
+    found["post_thumbnail"] = _crop_post_thumbnail(orig_rgb, overview_y, orig_rgb.shape[0], orig_rgb.shape[1])
 
     icon_row = _extract_icon_row(words, overview_y, scale)
     found.update(icon_row)
@@ -296,14 +329,18 @@ def extract_fields_from_image(image_bytes: bytes) -> dict:
 
 
 def extract_fields_from_images(images: list[bytes]) -> dict:
+    results = []
     merged = {k: None for k in FIELD_KEYS}
     for image_bytes in images:
         try:
             partial = extract_fields_from_image(image_bytes)
+            results.append(partial)
         except Exception:
             partial = {}
         for k, val in partial.items():
             if merged.get(k) is None and val:
                 merged[k] = val
+
+    merged["posts"] = results
     return merged
 

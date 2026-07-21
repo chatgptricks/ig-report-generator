@@ -340,6 +340,7 @@ async function doExtract() {
     const r = await fetch(`${backendUrl}/extract`, { method: 'POST', body: fd });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const out = await r.json();
+    extractedPosts = (out.posts && out.posts.length) ? out.posts : [out];
 
     if (out.post_type === 'reel') {
       delete data.profile_visits;
@@ -395,35 +396,97 @@ const ICON = {
 };
 const iconSvg = k => `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
 
-function sumCard([labelKey, vkey, hero]) {
-  if (hero) {
-    return `<div class="mcard hero" style="width:262px;height:150px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:24px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 14px 44px rgba(207,255,4,.24)">
-      <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#0a2a00;margin-bottom:8px">${tr(labelKey)}</div>
-      <div style="font-size:40px;line-height:.92;font-weight:700;letter-spacing:-.015em;color:#000">${v(vkey)}</div></div>`;
-  }
-  return `<div class="mcard" style="width:262px;height:150px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:24px;display:flex;flex-direction:column;justify-content:flex-end">
-    <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#cfff04;margin-bottom:8px">${tr(labelKey)}</div>
-    <div style="font-size:36px;line-height:.92;font-weight:500;letter-spacing:-.01em;color:#fff">${v(vkey)}</div></div>`;
+let extractedPosts = [];
+
+function postSlide(post, idx, total, name, month) {
+  const isReel = (post.post_type === 'reel' || post.average_watch_time);
+  const typeLabel = isReel ? 'REEL' : 'POST';
+  const badgeStyle = isReel ? 'background:#cfff04;color:#000;' : 'background:#1a1a1a;color:#cfff04;border:1px solid #cfff04;';
+
+  const thumbHtml = post.post_thumbnail
+    ? `<img src="${post.post_thumbnail}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">`
+    : `<div style="display:grid;place-items:center;height:100%;color:#5a5a56;font-size:12px;font-weight:600">NO PREVIEW</div>`;
+
+  const icons = [['likes','m_likes'],['comments','m_comments'],['shares','m_shares'],['sends','m_sends'],['saves','m_saves']];
+  const getVal = k => (post[k] !== undefined && post[k] !== null && post[k] !== '') ? post[k] : (data[k] || '—');
+
+  const iconRowHtml = icons.map(([k, lk]) => `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="lime" style="transform:scale(0.85)">${iconSvg(k)}</div>
+      <div style="font-size:22px;font-weight:700;color:#fff">${getVal(k)}</div>
+      <div class="dk" style="font-size:9px;letter-spacing:.08em;color:#7a7a76">${tr(lk)}</div>
+    </div>`).join('');
+
+  const card3Label = isReel ? 'm_average_watch_time' : 'm_profile_visits';
+  const card3Key = isReel ? 'average_watch_time' : 'profile_visits';
+
+  const cards = [
+    ['m_views', 'views', true],
+    ['m_accounts_reached', 'accounts_reached', false],
+    [card3Label, card3Key, false],
+    ['m_follows', 'follows', false]
+  ];
+
+  const renderCard = ([labelKey, vkey, hero]) => {
+    const val = getVal(vkey);
+    if (hero) {
+      return `<div class="mcard hero" style="width:260px;height:135px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 12px 36px rgba(207,255,4,.24)">
+        <div class="dk" style="font-size:12px;letter-spacing:.08em;color:#0a2a00;margin-bottom:6px">${tr(labelKey)}</div>
+        <div style="font-size:38px;line-height:.9;font-weight:700;letter-spacing:-.015em;color:#000">${val}</div></div>`;
+    }
+    return `<div class="mcard" style="width:260px;height:135px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end">
+      <div class="dk" style="font-size:12px;letter-spacing:.08em;color:#cfff04;margin-bottom:6px">${tr(labelKey)}</div>
+      <div style="font-size:34px;line-height:.9;font-weight:500;letter-spacing:-.01em;color:#fff">${val}</div></div>`;
+  };
+
+  return `<div class="grid-bg"></div>
+    <div style="position:absolute;left:64px;right:64px;top:44px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span class="dk" style="padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.14em;${badgeStyle}">${typeLabel}</span>
+        <div class="dk lime" style="font-size:32px;line-height:1">${name} · Post #${idx + 1}</div>
+      </div>
+      <div class="dk" style="font-size:12px;letter-spacing:.2em;color:#7a7a76">${month} ${tr('reportword')}</div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div style="position:absolute;left:64px;right:64px;top:118px;bottom:70px;display:flex;gap:36px;align-items:center">
+      <!-- Left Column: Thumbnail + Engagement Row -->
+      <div style="flex:0 0 470px;display:flex;flex-direction:column;align-items:center;gap:16px">
+        <div style="width:230px;height:300px;background:#101010;border:1px solid #262626;border-radius:16px;padding:8px;box-shadow:0 10px 30px rgba(0,0,0,.6);overflow:hidden">
+          ${thumbHtml}
+        </div>
+        <div style="width:100%;background:linear-gradient(155deg,#141414,#0b0b0b);border:1px solid #1e1e1e;border-radius:16px;padding:14px 10px;display:flex;justify-content:space-around">
+          ${iconRowHtml}
+        </div>
+      </div>
+
+      <!-- Right Column: 2x2 Summary Cards Grid -->
+      <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:20px;justify-items:center">
+        ${cards.map(renderCard).join('')}
+      </div>
+    </div>
+
+    <div style="position:absolute;left:64px;bottom:26px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
+    <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
 }
 
-function overviewSlide(name, month) {
-  const icons = [['likes','m_likes'],['comments','m_comments'],['shares','m_shares'],['sends','m_sends'],['saves','m_saves']];
-  const iconRow = icons.map(([k, lk]) => `
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;width:180px">
-      <div class="lime">${iconSvg(k)}</div>
-      <div style="font-size:30px;font-weight:600;color:#fff;letter-spacing:-.01em">${v(k)}</div>
-      <div class="dk" style="font-size:10px;letter-spacing:.12em;color:#7a7a76">${tr(lk)}</div>
+function proofSlide(imgs, name, month) {
+  const count = Math.min(imgs.length, 5);
+  const gallery = imgs.slice(0, count).map(src => `
+    <div style="height:460px;border-radius:14px;overflow:hidden;border:1px solid #262626;background:#050505;box-shadow:0 10px 30px rgba(0,0,0,.6)">
+      <img src="${src}" style="width:100%;height:100%;object-fit:contain">
     </div>`).join('');
-  const card3Label = data.average_watch_time ? 'm_average_watch_time' : 'm_profile_visits';
-  const card3Key = data.average_watch_time ? 'average_watch_time' : 'profile_visits';
-  const summary = [['m_views','views',true],['m_accounts_reached','accounts_reached',false],[card3Label,card3Key,false],['m_follows','follows',false]];
+
   return `<div class="grid-bg"></div>
-    <div style="position:absolute;left:0;right:0;top:52px;text-align:center">
-      <div class="dk lime" style="font-size:46px;line-height:1">${tr('sec_overview')}</div>
-      <div class="dk" style="font-size:12px;letter-spacing:.24em;color:#7a7a76;margin-top:10px">${name} · ${month} ${tr('reportword')}</div>
+    <div style="position:absolute;left:64px;right:64px;top:44px;display:flex;align-items:center;justify-content:space-between">
+      <div class="dk lime" style="font-size:32px;line-height:1">BACKUP PROOF · ORIGINAL SCREENSHOTS</div>
+      <div class="dk" style="font-size:12px;letter-spacing:.2em;color:#7a7a76">${name} · ${month}</div>
     </div>
-    <div style="position:absolute;left:0;right:0;top:180px;display:flex;justify-content:center;gap:12px">${iconRow}</div>
-    <div style="position:absolute;left:0;right:0;top:360px;display:flex;justify-content:center;gap:16px">${summary.map(sumCard).join('')}</div>
+
+    <div style="position:absolute;left:64px;right:64px;top:115px;bottom:70px;display:grid;grid-template-columns:repeat(${count}, 1fr);gap:16px;align-items:center">
+      ${gallery}
+    </div>
+
     <div style="position:absolute;left:64px;bottom:26px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
     <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
 }
@@ -441,8 +504,15 @@ function render() {
      <div style="position:absolute;left:60px;bottom:44px" class="lime"><b style="font-size:13px;font-weight:600">www.sentientagency.io</b></div>
      <div style="position:absolute;right:60px;bottom:44px;text-align:right" class="lime"><b style="font-size:13px;font-weight:600">contact@sentientagency.io</b></div>`;
 
-  const overview = overviewSlide(name, month);
-  $('deck').innerHTML = [cover, overview].map(s => `<div class="stage"><div class="slide">${s}</div></div>`).join('');
+  const postsToRender = extractedPosts.length ? extractedPosts : [data];
+  const postSlides = postsToRender.map((p, idx) => postSlide(p, idx, postsToRender.length, name, month));
+
+  const slides = [cover, ...postSlides];
+  if (imgs.length > 0) {
+    slides.push(proofSlide(imgs, name, month));
+  }
+
+  $('deck').innerHTML = slides.map(s => `<div class="stage"><div class="slide">${s}</div></div>`).join('');
   fit();
 }
 
