@@ -273,18 +273,49 @@ def _extract_summary_grid(lines: list[dict], img_h: int, img_w: int, icon_values
 
 
 def _crop_post_thumbnail(image_rgb: np.ndarray, overview_y: int | None, img_h: int, img_w: int) -> str | None:
-    """Crop the full post/reel preview thumbnail sitting above the engagement icons."""
+    """Detect and crop the exact post picture/video content sitting above the engagement icons."""
     try:
-        y1 = int(img_h * 0.10)
-        y2 = int(overview_y - int(img_h * 0.04)) if overview_y and overview_y > img_h * 0.25 else int(img_h * 0.44)
+        y1 = int(img_h * 0.135)
 
-        if y2 <= y1 + 40:
+        if overview_y and overview_y > img_h * 0.25:
+            y2 = int(overview_y - int(img_h * 0.07))
+        else:
+            y2 = int(img_h * 0.425)
+
+        if y2 <= y1 + 50:
             return None
 
-        x1 = int(img_w * 0.17)
-        x2 = int(img_w * 0.83)
+        x1 = int(img_w * 0.20)
+        x2 = int(img_w * 0.80)
 
-        crop = image_rgb[y1:y2, x1:x2]
+        roi = image_rgb[y1:y2, x1:x2]
+        roi_h, roi_w = roi.shape[0], roi.shape[1]
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 30, 100)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        dilated = cv2.dilate(edges, kernel, iterations=2)
+
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        best_rect = None
+        max_area = 0
+        for cnt in contours:
+            bx, by, bw, bh = cv2.boundingRect(cnt)
+            area = bw * bh
+            if area > max_area and bw > roi_w * 0.35 and bh > roi_h * 0.30:
+                max_area = area
+                best_rect = (bx, by, bw, bh)
+
+        if best_rect:
+            bx, by, bw, bh = best_rect
+            by = max(0, by - 2)
+            bh = min(roi_h - by, bh + 4)
+            bx = max(0, bx - 2)
+            bw = min(roi_w - bx, bw + 4)
+            crop = roi[by:by+bh, bx:bx+bw]
+        else:
+            crop = roi[int(roi_h * 0.05):int(roi_h * 0.95), int(roi_w * 0.10):int(roi_w * 0.90)]
 
         pil_crop = Image.fromarray(crop)
         pil_crop.thumbnail((600, 600), Image.Resampling.LANCZOS)
