@@ -46,9 +46,13 @@ def _preprocess(image_bytes: bytes):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     h, w = gray.shape
-    scale = 2 if max(h, w) < 1600 else 1
-    if scale > 1:
-        gray = cv2.resize(gray, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+    scale = 1.0
+    if max(h, w) > 1600:
+        scale = 1400.0 / max(h, w)
+        gray = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    elif max(h, w) < 900:
+        scale = 1.5
+        gray = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_CUBIC)
 
     # Invert dark mode screenshots (white text on dark bg) to black text on white bg for optimal Tesseract OCR
     if np.mean(gray) < 127:
@@ -61,9 +65,14 @@ def _preprocess(image_bytes: bytes):
 
 
 def _words(image_array) -> list[dict]:
-    data = pytesseract.image_to_data(
-        image_array, lang="eng+spa+por+fra", output_type=Output.DICT
-    )
+    try:
+        data = pytesseract.image_to_data(
+            image_array, lang="eng+spa+por+fra", output_type=Output.DICT
+        )
+    except Exception:
+        data = pytesseract.image_to_data(
+            image_array, lang="eng", output_type=Output.DICT
+        )
     out = []
     for i in range(len(data["text"])):
         t = data["text"][i].strip()

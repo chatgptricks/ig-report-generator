@@ -345,7 +345,7 @@ $('extract').onclick = async () => {
     });
     render(); say(tr('extracted')(n));
   } catch (e) {
-    say(tr('readfail'), true);
+    say(tr('readfail') + ` (${e.message || e})`, true);
   }
   $('extract').disabled = false;
 };
