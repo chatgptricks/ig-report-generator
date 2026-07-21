@@ -171,44 +171,55 @@ def _extract_icon_row(words: list[dict], overview_y: int | None, scale: int) -> 
     return result
 
 
-def _closest_number_near_label(lines: list[dict], label_line: dict, img_h: int) -> str | None:
-    """Find the number line that best matches this label: nearby (below or above) and left-aligned
-    with it (handles multi-column grid cards in various IG UI layouts)."""
+def _closest_number_near_label(lines: list[dict], label_line: dict, img_h: int, img_w: int, exclude_values: set) -> str | None:
+    """Find the number line that best matches this label: nearby (below or above) and strictly
+    within the same grid card column (dx <= img_w * 0.25), ignoring already-used values."""
     best_val, best_score = None, None
-    max_gap = img_h * 0.15
+    max_gap = img_h * 0.18
+    max_dx = img_w * 0.25  # Must be within the same card column!
+
     for line in lines:
         if line == label_line:
             continue
         dy = abs(line["y0"] - label_line["y0"])
         if dy > max_gap:
             continue
+        dx = abs(line["x"] - label_line["x"])
+        if dx > max_dx:
+            continue
         m = NUMBER_SEARCH_RE.search(line["text"])
         if not m:
             continue
-        dx = abs(line["x"] - label_line["x"])
-        score = dx + dy * 0.4
+        val = m.group().strip()
+        val_clean = re.sub(r"\s+", "", val).rstrip(".,")
+        if not val_clean or val_clean in exclude_values:
+            continue
+
+        score = dx + dy * 0.5
         if best_score is None or score < best_score:
             best_score = score
-            best_val = m.group().strip()
+            best_val = val_clean
     return best_val
 
 
-def _extract_summary_grid(lines: list[dict], img_h: int) -> dict:
+def _extract_summary_grid(lines: list[dict], img_h: int, img_w: int, icon_values: dict) -> dict:
     result = {}
+    used_values = set(v for v in icon_values.values() if v)
     for field, keywords in LABEL_KEYWORDS.items():
         for line in lines:
             norm = line["text"].lower()
             if any(kw in norm for kw in keywords):
-                val = _closest_number_near_label(lines, line, img_h)
+                val = _closest_number_near_label(lines, line, img_h, img_w, exclude_values=used_values)
                 if val:
                     result[field] = val
+                    used_values.add(val)
                 break
     return result
 
 
 def extract_fields_from_image(image_bytes: bytes) -> dict:
     processed, scale = _preprocess(image_bytes)
-    img_h = processed.shape[0]
+    img_h, img_w = processed.shape[0], processed.shape[1]
 
     words = _words(processed)
     lines = _lines_from_words(words)
@@ -221,8 +232,9 @@ def extract_fields_from_image(image_bytes: bytes) -> dict:
             break
 
     found = {k: None for k in FIELD_KEYS}
-    found.update(_extract_icon_row(words, overview_y, scale))
-    found.update(_extract_summary_grid(lines, img_h))
+    icon_row = _extract_icon_row(words, overview_y, scale)
+    found.update(icon_row)
+    found.update(_extract_summary_grid(lines, img_h, img_w, icon_row))
     return found
 
 
