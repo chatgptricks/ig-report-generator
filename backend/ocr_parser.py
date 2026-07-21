@@ -126,7 +126,7 @@ def _lines_from_words(words: list[dict]) -> list[dict]:
     for group in line_groups:
         line_words = sorted(group["words"], key=lambda w: w["x"])
 
-        # Split words into separate sub-lines if separated by horizontal column gaps (> 45px)
+        # Split words into separate sub-lines if separated by horizontal column gaps (> 35px or 1.2x font height)
         sub_clusters = []
         curr_cluster = []
         for w in line_words:
@@ -135,7 +135,8 @@ def _lines_from_words(words: list[dict]) -> list[dict]:
             else:
                 prev = curr_cluster[-1]
                 gap = w["x"] - (prev["x"] + prev["w"])
-                if gap > 45:
+                max_word_gap = max(35, w["h"] * 1.2)
+                if gap > max_word_gap:
                     sub_clusters.append(curr_cluster)
                     curr_cluster = [w]
                 else:
@@ -151,7 +152,7 @@ def _lines_from_words(words: list[dict]) -> list[dict]:
                     prev_text = prev_w["text"]
                     curr_text = w["text"]
                     gap_x = w["x"] - (prev_w["x"] + prev_w["w"])
-                    if gap_x < 25 and (prev_text.endswith(",") or prev_text.endswith(".")) and curr_text[0].isdigit():
+                    if gap_x < max(20, w["h"] * 0.8) and (prev_text.endswith(",") or prev_text.endswith(".")) and curr_text[0].isdigit():
                         full_text += curr_text
                     else:
                         full_text += " " + curr_text
@@ -212,10 +213,10 @@ def _extract_icon_row(words: list[dict], overview_y: int | None, scale: float) -
 
 
 def _closest_number_near_label(lines: list[dict], label_line: dict, img_h: int, img_w: int, exclude_values: set, is_time: bool = False) -> str | None:
-    """Find the number line that best matches this label: strictly below the label and within the same grid column (dx <= img_w * 0.25)."""
+    """Find the number line that best matches this label: strictly below the label and within the same grid column (dx <= img_w * 0.22)."""
     best_val, best_score = None, None
     max_gap = img_h * 0.18
-    max_dx = img_w * 0.25
+    max_dx = img_w * 0.22  # Strict 22% image width column bound
 
     regex = TIME_SEARCH_RE if is_time else NUMBER_SEARCH_RE
 
