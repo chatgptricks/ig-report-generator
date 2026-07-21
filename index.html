@@ -512,13 +512,13 @@ function postSlide(post, idx, total, name, month) {
     </div>
 
     <!-- Engagement Icons Row -->
-    <div style="position:absolute;left:0;right:0;top:180px;display:flex;justify-content:center;gap:12px">${iconRowHtml}</div>
+    <div style="position:absolute;left:0;right:0;top:220px;display:flex;justify-content:center;gap:12px">${iconRowHtml}</div>
 
     <!-- Summary Cards Grid -->
-    <div style="position:absolute;left:0;right:0;top:360px;display:flex;justify-content:center;gap:16px">${summary.map(renderCard).join('')}</div>
+    <div style="position:absolute;left:0;right:0;top:420px;display:flex;justify-content:center;gap:16px">${summary.map(renderCard).join('')}</div>
 
-    <div style="position:absolute;left:64px;bottom:26px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
-    <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
+    <div style="position:absolute;left:64px;bottom:32px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
+    <div style="position:absolute;right:64px;bottom:32px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
 }
 
 function parseMetricValue(str) {
@@ -585,11 +585,11 @@ function totalsSlide(posts, name, month) {
 
   const renderCard = ([labelKey, val, hero]) => {
     if (hero) {
-      return `<div class="mcard hero" style="width:262px;height:145px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 14px 44px rgba(207,255,4,.24)">
+      return `<div class="mcard hero" style="width:262px;height:150px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 14px 44px rgba(207,255,4,.24)">
         <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#0a2a00;margin-bottom:8px">${tr(labelKey)}</div>
         <div style="font-size:40px;line-height:.9;font-weight:700;letter-spacing:-.015em;color:#000">${val}</div></div>`;
     }
-    return `<div class="mcard" style="width:262px;height:145px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end">
+    return `<div class="mcard" style="width:262px;height:150px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end">
       <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#cfff04;margin-bottom:8px">${tr(labelKey)}</div>
       <div style="font-size:36px;line-height:.9;font-weight:500;letter-spacing:-.01em;color:#fff">${val}</div></div>`;
   };
@@ -606,13 +606,13 @@ function totalsSlide(posts, name, month) {
     </div>
 
     <!-- Total Engagement Icons Row -->
-    <div style="position:absolute;left:0;right:0;top:180px;display:flex;justify-content:center;gap:12px">${iconRowHtml}</div>
+    <div style="position:absolute;left:0;right:0;top:220px;display:flex;justify-content:center;gap:12px">${iconRowHtml}</div>
 
     <!-- Total Summary Cards Grid -->
-    <div style="position:absolute;left:0;right:0;top:360px;display:flex;justify-content:center;gap:16px">${summary.map(renderCard).join('')}</div>
+    <div style="position:absolute;left:0;right:0;top:420px;display:flex;justify-content:center;gap:16px">${summary.map(renderCard).join('')}</div>
 
-    <div style="position:absolute;left:64px;bottom:26px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
-    <div style="position:absolute;right:64px;bottom:26px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
+    <div style="position:absolute;left:64px;bottom:32px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
+    <div style="position:absolute;right:64px;bottom:32px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
 }
 
 function proofSlide(imgs, name, month) {
