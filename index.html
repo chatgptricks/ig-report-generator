@@ -4,11 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sentient Instagram Report Generator</title>
-<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Archivo:ital,wght@0,300..900;1,300..900&display=block" rel="stylesheet">
 <style>
   * { box-sizing: border-box; }
-  #app { font-family: 'Open Sans', system-ui, sans-serif; color: #e8e8e6; background: #0d0d0d; padding: 20px; border-radius: 12px; }
+  body, #app {
+    font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    color: #e8e8e6;
+    background: #0d0d0d;
+    padding: 20px;
+    border-radius: 12px;
+  }
+  .dk {
+    font-family: 'Archivo', -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
   .topbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 20px; margin-bottom: 20px; border-bottom: 1px solid #1e1e1e; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .logo { position: relative; width: 44px; height: 44px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 20px rgba(207,255,4,.28); }
@@ -126,6 +136,12 @@
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
       color-adjust: exact !important;
+      font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
+    }
+    .dk {
+      font-family: 'Archivo', -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif !important;
+      text-transform: uppercase !important;
+      letter-spacing: .04em !important;
     }
     @page {
       size: 1280px 720px;
