@@ -556,6 +556,8 @@ function totalsSlide(posts, name, month) {
     }
   });
 
+  const darkIconSvg = k => `<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#000000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+
   const icons = [
     ['likes', 'm_likes', formatMetricNumber(totalLikes)],
     ['comments', 'm_comments', formatMetricNumber(totalComments)],
@@ -566,9 +568,9 @@ function totalsSlide(posts, name, month) {
 
   const iconRowHtml = icons.map(([k, lk, val]) => `
     <div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:180px">
-      <div class="lime">${iconSvg(k)}</div>
-      <div style="font-size:28px;font-weight:700;color:#fff">${val}</div>
-      <div class="dk" style="font-size:10px;letter-spacing:.12em;color:#7a7a76">${tr(lk)}</div>
+      <div style="color:#000">${darkIconSvg(k)}</div>
+      <div style="font-size:28px;font-weight:800;color:#000000">${val}</div>
+      <div class="dk" style="font-size:10px;letter-spacing:.14em;color:#1a1a1a;font-weight:700">${tr(lk)}</div>
     </div>`).join('');
 
   const card3Label = hasWatchTime ? 'm_average_watch_time' : 'm_profile_visits';
@@ -585,24 +587,25 @@ function totalsSlide(posts, name, month) {
 
   const renderCard = ([labelKey, val, hero]) => {
     if (hero) {
-      return `<div class="mcard hero" style="width:262px;height:150px;border:1px solid #cfff04;background:#cfff04;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#000;box-shadow:0 14px 44px rgba(207,255,4,.24)">
-        <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#0a2a00;margin-bottom:8px">${tr(labelKey)}</div>
-        <div style="font-size:40px;line-height:.9;font-weight:700;letter-spacing:-.015em;color:#000">${val}</div></div>`;
+      return `<div class="mcard hero" style="width:262px;height:150px;border:2px solid #000;background:#000000;border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;color:#cfff04;box-shadow:0 14px 44px rgba(0,0,0,.35)">
+        <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#cfff04;margin-bottom:8px">${tr(labelKey)}</div>
+        <div style="font-size:40px;line-height:.9;font-weight:800;letter-spacing:-.015em;color:#cfff04">${val}</div></div>`;
     }
-    return `<div class="mcard" style="width:262px;height:150px;border:1px solid #1e1e1e;background:linear-gradient(155deg,#141414,#0b0b0b);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end">
+    return `<div class="mcard" style="width:262px;height:150px;border:1.5px solid #000;background:linear-gradient(155deg,#181818,#0a0a0a);border-radius:18px;padding:22px;display:flex;flex-direction:column;justify-content:flex-end;box-shadow:0 10px 30px rgba(0,0,0,.22)">
       <div class="dk" style="font-size:13px;letter-spacing:.08em;color:#cfff04;margin-bottom:8px">${tr(labelKey)}</div>
-      <div style="font-size:36px;line-height:.9;font-weight:500;letter-spacing:-.01em;color:#fff">${val}</div></div>`;
+      <div style="font-size:36px;line-height:.9;font-weight:700;letter-spacing:-.01em;color:#ffffff">${val}</div></div>`;
   };
 
-  return `<div class="grid-bg"></div>
+  return `<div style="position:absolute;inset:0;background:#cfff04;"></div>
+    <div style="position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(0,0,0,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,.04) 1px, transparent 1px);background-size:64px 64px;"></div>
 
     <!-- Header Bar -->
     <div style="position:absolute;left:64px;right:64px;top:44px;display:flex;align-items:center;justify-content:space-between">
       <div style="display:flex;align-items:center;gap:14px">
-        <span class="dk" style="padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.14em;background:#cfff04;color:#000;">CUMULATIVE TOTALS</span>
-        <div class="dk lime" style="font-size:32px;line-height:1">${name} · ${posts.length} Posts Overview</div>
+        <span class="dk" style="padding:6px 14px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.14em;background:#000000;color:#cfff04;">CUMULATIVE TOTALS</span>
+        <div class="dk" style="font-size:32px;line-height:1;font-weight:800;color:#000000">${name} · ${posts.length} Posts Overview</div>
       </div>
-      <div class="dk" style="font-size:12px;letter-spacing:.2em;color:#7a7a76">${month} ${tr('reportword')}</div>
+      <div class="dk" style="font-size:12px;letter-spacing:.2em;color:#222222;font-weight:700">${month} ${tr('reportword')}</div>
     </div>
 
     <!-- Total Engagement Icons Row -->
@@ -611,8 +614,8 @@ function totalsSlide(posts, name, month) {
     <!-- Total Summary Cards Grid -->
     <div style="position:absolute;left:0;right:0;top:440px;display:flex;justify-content:center;gap:16px">${summary.map(renderCard).join('')}</div>
 
-    <div style="position:absolute;left:64px;bottom:24px" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">www.sentientagency.io</b></div>
-    <div style="position:absolute;right:64px;bottom:24px;text-align:right" class="lime"><b style="font-size:10px;font-weight:600;letter-spacing:.06em">contact@sentientagency.io</b></div>`;
+    <div style="position:absolute;left:64px;bottom:24px;color:#000000"><b style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#000000">www.sentientagency.io</b></div>
+    <div style="position:absolute;right:64px;bottom:24px;text-align:right;color:#000000"><b style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#000000">contact@sentientagency.io</b></div>`;
 }
 
 function proofSlide(imgs, name, month) {
