@@ -341,10 +341,20 @@ async function doExtract() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const out = await r.json();
 
+    if (out.post_type === 'reel') {
+      delete data.profile_visits;
+      if ($('f_profile_visits')) $('f_profile_visits').value = '';
+    } else if (out.post_type === 'post') {
+      delete data.average_watch_time;
+      if ($('f_average_watch_time')) $('f_average_watch_time').value = '';
+    }
+
     let n = 0;
     FIELDS.forEach(([k]) => {
       if (out[k] !== null && out[k] !== undefined && out[k] !== '') {
-        data[k] = String(out[k]); $('f_' + k).value = data[k]; n++;
+        data[k] = String(out[k]);
+        if ($('f_' + k)) $('f_' + k).value = data[k];
+        n++;
       }
     });
     render(); say(tr('extracted')(n));

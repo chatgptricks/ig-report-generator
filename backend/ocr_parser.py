@@ -177,15 +177,20 @@ def _is_number_word(text: str) -> bool:
 
 def _detect_post_type(lines: list[dict]) -> str:
     """Check the top header area of the screenshot to determine if it is a Reel or Post."""
-    header_text = " ".join(l["text"].lower() for l in lines[:6])
+    header_lines = lines[:10]
+    header_text = " ".join(l["text"].lower() for l in header_lines)
+
     if "reel" in header_text or "carrete" in header_text:
         return "reel"
-    if "post" in header_text or "publicación" in header_text or "publicacao" in header_text:
+    if "post" in header_text or "publicación" in header_text or "publicacao" in header_text or "impresiones" in header_text or "impressions" in header_text:
         return "post"
 
     full_text = " ".join(l["text"].lower() for l in lines)
-    if "watch time" in full_text or "reproducción" in full_text or "reprodução" in full_text or "watch" in full_text:
+    if "average watch time" in full_text or "watch time" in full_text or "reproducción" in full_text or "reprodução" in full_text or "watch" in full_text:
         return "reel"
+    if "profile visits" in full_text or "visitas al perfil" in full_text or "visitas ao perfil" in full_text or "visites du profil" in full_text:
+        return "post"
+
     return "post"
 
 
